@@ -1,0 +1,6 @@
+run = "cowsay Configure me!"
+entrypoint = "README.md"
+modules = ["dart-3.3"]
+
+[nix]
+channel = "stable-24_05"
