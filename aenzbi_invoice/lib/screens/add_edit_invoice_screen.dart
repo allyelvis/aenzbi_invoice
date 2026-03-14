@@ -605,7 +605,6 @@ class _LineItemSheetState extends State<_LineItemSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     final isNew = widget.existing == null;
     return Padding(
       padding: EdgeInsets.only(
