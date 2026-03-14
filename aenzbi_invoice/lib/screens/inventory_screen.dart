@@ -3,6 +3,8 @@ import '../models/inventory_item.dart';
 import '../database/database_helper.dart';
 import 'add_edit_item_screen.dart';
 
+enum _SortOption { name, priceLow, priceHigh, stockLow, stockHigh, value }
+
 class InventoryScreen extends StatefulWidget {
   const InventoryScreen({super.key});
 
@@ -16,6 +18,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
   Map<String, dynamic> _summary = {};
   bool _loading = true;
   String _searchQuery = '';
+  String? _categoryFilter;
+  _SortOption _sortOption = _SortOption.name;
+  List<String> _categories = [];
   final TextEditingController _searchController = TextEditingController();
 
   @override
@@ -35,8 +40,15 @@ class _InventoryScreenState extends State<InventoryScreen> {
     try {
       final items = await DatabaseHelper.instance.getAllInventoryItems();
       final summary = await DatabaseHelper.instance.getInventorySummary();
+      final cats = items
+          .map((i) => i.category)
+          .where((c) => c.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
       setState(() {
         _items = items;
+        _categories = cats;
         _summary = summary;
         _applyFilter();
         _loading = false;
@@ -52,23 +64,41 @@ class _InventoryScreenState extends State<InventoryScreen> {
   }
 
   void _applyFilter() {
-    if (_searchQuery.isEmpty) {
-      _filtered = List.from(_items);
-    } else {
+    var result = List<InventoryItem>.from(_items);
+    if (_searchQuery.isNotEmpty) {
       final lower = _searchQuery.toLowerCase();
-      _filtered = _items.where((item) {
-        return item.name.toLowerCase().contains(lower) ||
-            item.sku.toLowerCase().contains(lower) ||
-            item.category.toLowerCase().contains(lower);
-      }).toList();
+      result = result
+          .where((item) =>
+              item.name.toLowerCase().contains(lower) ||
+              item.sku.toLowerCase().contains(lower) ||
+              item.category.toLowerCase().contains(lower) ||
+              item.description.toLowerCase().contains(lower))
+          .toList();
     }
-  }
-
-  void _onSearch(String query) {
-    setState(() {
-      _searchQuery = query;
-      _applyFilter();
-    });
+    if (_categoryFilter != null) {
+      result = result.where((i) => i.category == _categoryFilter).toList();
+    }
+    switch (_sortOption) {
+      case _SortOption.name:
+        result.sort((a, b) => a.name.compareTo(b.name));
+        break;
+      case _SortOption.priceLow:
+        result.sort((a, b) => a.price.compareTo(b.price));
+        break;
+      case _SortOption.priceHigh:
+        result.sort((a, b) => b.price.compareTo(a.price));
+        break;
+      case _SortOption.stockLow:
+        result.sort((a, b) => a.quantity.compareTo(b.quantity));
+        break;
+      case _SortOption.stockHigh:
+        result.sort((a, b) => b.quantity.compareTo(a.quantity));
+        break;
+      case _SortOption.value:
+        result.sort((a, b) => b.totalValue.compareTo(a.totalValue));
+        break;
+    }
+    _filtered = result;
   }
 
   Future<void> _navigateToAdd() async {
@@ -90,12 +120,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Item'),
-        content: Text('Are you sure you want to delete "${item.name}"?'),
+        content: Text('Delete "${item.name}"? This cannot be undone.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: FilledButton.styleFrom(
@@ -111,14 +140,56 @@ class _InventoryScreenState extends State<InventoryScreen> {
     }
   }
 
+  void _showSortSheet() {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('Sort By',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          ),
+          ..._SortOption.values.map((opt) => RadioListTile<_SortOption>(
+                value: opt,
+                groupValue: _sortOption,
+                title: Text(_sortLabel(opt)),
+                onChanged: (v) {
+                  setState(() { _sortOption = v!; _applyFilter(); });
+                  Navigator.pop(ctx);
+                },
+              )),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  String _sortLabel(_SortOption opt) {
+    switch (opt) {
+      case _SortOption.name: return 'Name (A–Z)';
+      case _SortOption.priceLow: return 'Price (low to high)';
+      case _SortOption.priceHigh: return 'Price (high to low)';
+      case _SortOption.stockLow: return 'Stock (low to high)';
+      case _SortOption.stockHigh: return 'Stock (high to low)';
+      case _SortOption.value: return 'Total Value (high to low)';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Inventory'),
+        title: Text('Inventory (${_items.length})'),
         backgroundColor: colorScheme.inversePrimary,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.sort),
+            onPressed: _showSortSheet,
+            tooltip: 'Sort',
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadData,
@@ -135,7 +206,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
                   child: TextField(
                     controller: _searchController,
-                    onChanged: _onSearch,
+                    onChanged: (v) =>
+                        setState(() { _searchQuery = v; _applyFilter(); }),
                     decoration: InputDecoration(
                       hintText: 'Search by name, SKU, category…',
                       prefixIcon: const Icon(Icons.search),
@@ -144,9 +216,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
                               icon: const Icon(Icons.clear),
                               onPressed: () {
                                 _searchController.clear();
-                                _onSearch('');
-                              },
-                            )
+                                setState(() { _searchQuery = ''; _applyFilter(); });
+                              })
                           : null,
                       border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12)),
@@ -154,9 +225,10 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     ),
                   ),
                 ),
+                if (_categories.isNotEmpty) _buildCategoryChips(colorScheme),
                 Expanded(
                   child: _filtered.isEmpty
-                      ? _buildEmptyState()
+                      ? _buildEmptyState(colorScheme)
                       : ListView.builder(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 4),
@@ -175,12 +247,39 @@ class _InventoryScreenState extends State<InventoryScreen> {
     );
   }
 
+  Widget _buildCategoryChips(ColorScheme cs) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      child: Row(
+        children: [
+          FilterChip(
+            label: const Text('All'),
+            selected: _categoryFilter == null,
+            onSelected: (_) =>
+                setState(() { _categoryFilter = null; _applyFilter(); }),
+          ),
+          ..._categories.map((cat) => Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: FilterChip(
+                  label: Text(cat),
+                  selected: _categoryFilter == cat,
+                  onSelected: (_) => setState(() {
+                    _categoryFilter = _categoryFilter == cat ? null : cat;
+                    _applyFilter();
+                  }),
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSummaryBar(ColorScheme cs) {
     final total = _summary['totalItems'] ?? 0;
     final value = (_summary['totalValue'] ?? 0.0) as double;
     final low = _summary['lowStockCount'] ?? 0;
     final out = _summary['outOfStockCount'] ?? 0;
-
     return Container(
       margin: const EdgeInsets.all(12),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -196,51 +295,31 @@ class _InventoryScreenState extends State<InventoryScreen> {
           _summaryTile(cs, Icons.attach_money,
               '\$${value.toStringAsFixed(2)}', 'Value'),
           _divider(),
-          _summaryTile(
-              cs,
-              Icons.warning_amber,
-              '$low',
-              'Low Stock',
+          _summaryTile(cs, Icons.warning_amber, '$low', 'Low Stock',
               color: low > 0 ? Colors.orange : null),
           _divider(),
-          _summaryTile(
-              cs,
-              Icons.remove_shopping_cart,
-              '$out',
-              'Out',
+          _summaryTile(cs, Icons.remove_shopping_cart, '$out', 'Out',
               color: out > 0 ? cs.error : null),
         ],
       ),
     );
   }
 
-  Widget _divider() => Container(
-        height: 30,
-        width: 1,
-        color: Colors.black12,
-      );
+  Widget _divider() =>
+      Container(height: 30, width: 1, color: Colors.black12);
 
-  Widget _summaryTile(ColorScheme cs, IconData icon, String value, String label,
-      {Color? color}) {
+  Widget _summaryTile(ColorScheme cs, IconData icon, String value,
+      String label, {Color? color}) {
+    final c = color ?? cs.onPrimaryContainer;
     return Column(
       children: [
-        Icon(icon, size: 18, color: color ?? cs.onPrimaryContainer),
+        Icon(icon, size: 18, color: c),
         const SizedBox(height: 2),
-        Text(
-          value,
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 13,
-            color: color ?? cs.onPrimaryContainer,
-          ),
-        ),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            color: (color ?? cs.onPrimaryContainer).withOpacity(0.7),
-          ),
-        ),
+        Text(value,
+            style: TextStyle(
+                fontWeight: FontWeight.bold, fontSize: 13, color: c)),
+        Text(label,
+            style: TextStyle(fontSize: 10, color: c.withOpacity(0.7))),
       ],
     );
   }
@@ -255,101 +334,102 @@ class _InventoryScreenState extends State<InventoryScreen> {
       stockColor = Colors.orange;
       stockLabel = 'Low: ${item.quantity} ${item.unit}';
     }
-
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: cs.primaryContainer,
-          child: Text(
-            item.name.isNotEmpty ? item.name[0].toUpperCase() : '?',
-            style: TextStyle(
-                color: cs.onPrimaryContainer, fontWeight: FontWeight.bold),
+      child: InkWell(
+        onTap: () => _navigateToEdit(item),
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: cs.primaryContainer,
+                child: Text(
+                  item.name.isNotEmpty ? item.name[0].toUpperCase() : '?',
+                  style: TextStyle(
+                      color: cs.onPrimaryContainer,
+                      fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(item.name,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w600, fontSize: 14)),
+                    if (item.sku.isNotEmpty || item.category.isNotEmpty)
+                      Text(
+                        [
+                          if (item.sku.isNotEmpty) 'SKU: ${item.sku}',
+                          if (item.category.isNotEmpty) item.category,
+                        ].join(' • '),
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: cs.onSurface.withOpacity(0.6)),
+                      ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Text(stockLabel,
+                            style: TextStyle(
+                                color: stockColor,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500)),
+                        const Spacer(),
+                        Text('\$${item.price.toStringAsFixed(2)}',
+                            style: TextStyle(
+                                color: cs.primary,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuButton<String>(
+                onSelected: (v) {
+                  if (v == 'edit') _navigateToEdit(item);
+                  if (v == 'delete') _deleteItem(item);
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                  const PopupMenuItem(
+                      value: 'delete',
+                      child: Text('Delete',
+                          style: TextStyle(color: Colors.red))),
+                ],
+              ),
+            ],
           ),
         ),
-        title: Text(item.name,
-            style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (item.sku.isNotEmpty || item.category.isNotEmpty)
-              Text(
-                [if (item.sku.isNotEmpty) 'SKU: ${item.sku}',
-                  if (item.category.isNotEmpty) item.category]
-                    .join(' • '),
-                style: const TextStyle(fontSize: 12),
-              ),
-            Row(
-              children: [
-                Text(
-                  stockLabel,
-                  style: TextStyle(
-                      color: stockColor,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500),
-                ),
-                const Spacer(),
-                Text(
-                  '\$${item.price.toStringAsFixed(2)}',
-                  style: TextStyle(
-                    color: cs.primary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-        trailing: PopupMenuButton<String>(
-          onSelected: (v) {
-            if (v == 'edit') _navigateToEdit(item);
-            if (v == 'delete') _deleteItem(item);
-          },
-          itemBuilder: (_) => [
-            const PopupMenuItem(value: 'edit', child: Text('Edit')),
-            const PopupMenuItem(
-                value: 'delete',
-                child: Text('Delete', style: TextStyle(color: Colors.red))),
-          ],
-        ),
-        onTap: () => _navigateToEdit(item),
-        isThreeLine: true,
       ),
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(ColorScheme cs) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.inventory_2_outlined,
-              size: 72,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3)),
+              size: 72, color: cs.onSurface.withOpacity(0.3)),
           const SizedBox(height: 16),
           Text(
-            _searchQuery.isNotEmpty
-                ? 'No items match your search'
+            _searchQuery.isNotEmpty || _categoryFilter != null
+                ? 'No items match your filters'
                 : 'No inventory items yet',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withOpacity(0.5),
+                  color: cs.onSurface.withOpacity(0.5),
                 ),
           ),
           const SizedBox(height: 8),
-          if (_searchQuery.isEmpty)
-            Text(
-              'Tap + Add Item to get started',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withOpacity(0.4),
-                  ),
-            ),
+          if (_searchQuery.isEmpty && _categoryFilter == null)
+            Text('Tap + Add Item to get started',
+                style: TextStyle(
+                    fontSize: 13, color: cs.onSurface.withOpacity(0.4))),
         ],
       ),
     );

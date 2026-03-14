@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'database/database_helper.dart';
+import 'screens/dashboard_screen.dart';
 import 'screens/inventory_screen.dart';
+import 'screens/invoice_screen.dart';
+import 'screens/customer_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
     await DatabaseHelper.instance.init();
-  } catch (_) {
-  }
+  } catch (_) {}
   runApp(const AenzbiInvoiceApp());
 }
 
@@ -20,8 +22,18 @@ class AenzbiInvoiceApp extends StatelessWidget {
       title: 'Aenzbi Invoice',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF3F51B5),
+          brightness: Brightness.light,
+        ),
         useMaterial3: true,
+        cardTheme: const CardTheme(
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(12)),
+            side: BorderSide(color: Color(0xFFE0E0E0)),
+          ),
+        ),
       ),
       home: const MainShell(),
     );
@@ -38,9 +50,11 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _selectedIndex = 0;
 
-  final List<Widget> _pages = const [
+  static const List<Widget> _pages = [
+    DashboardScreen(),
     InventoryScreen(),
-    _DashboardPlaceholder(),
+    InvoiceScreen(),
+    CustomerScreen(),
   ];
 
   @override
@@ -53,55 +67,29 @@ class _MainShellState extends State<MainShell> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: (i) => setState(() => _selectedIndex = i),
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.dashboard_outlined),
+            selectedIcon: Icon(Icons.dashboard),
+            label: 'Dashboard',
+          ),
           NavigationDestination(
             icon: Icon(Icons.inventory_2_outlined),
             selectedIcon: Icon(Icons.inventory_2),
             label: 'Inventory',
           ),
           NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard),
-            label: 'Dashboard',
+            icon: Icon(Icons.receipt_long_outlined),
+            selectedIcon: Icon(Icons.receipt_long),
+            label: 'Invoices',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.people_outline),
+            selectedIcon: Icon(Icons.people),
+            label: 'Customers',
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _DashboardPlaceholder extends StatelessWidget {
-  const _DashboardPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Dashboard'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.dashboard_outlined,
-              size: 80,
-              color:
-                  Theme.of(context).colorScheme.primary.withOpacity(0.3),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Dashboard coming soon',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .onSurface
-                        .withOpacity(0.5),
-                  ),
-            ),
-          ],
-        ),
       ),
     );
   }
