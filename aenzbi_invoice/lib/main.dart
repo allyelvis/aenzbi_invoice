@@ -4,7 +4,10 @@ import 'screens/inventory_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await DatabaseHelper.instance.init();
+  try {
+    await DatabaseHelper.instance.init();
+  } catch (_) {
+  }
   runApp(const AenzbiInvoiceApp());
 }
 
