@@ -9,6 +9,7 @@ class InventoryItem {
   final int quantity;
   final int lowStockThreshold;
   final String unit;
+  final String supplierId;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -23,6 +24,7 @@ class InventoryItem {
     required this.quantity,
     this.lowStockThreshold = 5,
     this.unit = 'pcs',
+    this.supplierId = '',
     DateTime? createdAt,
     DateTime? updatedAt,
   })  : createdAt = createdAt ?? DateTime.now(),
@@ -45,6 +47,7 @@ class InventoryItem {
       'quantity': quantity,
       'lowStockThreshold': lowStockThreshold,
       'unit': unit,
+      'supplierId': supplierId,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };
@@ -62,6 +65,7 @@ class InventoryItem {
       quantity: map['quantity'] as int,
       lowStockThreshold: (map['lowStockThreshold'] as int?) ?? 5,
       unit: (map['unit'] as String?) ?? 'pcs',
+      supplierId: (map['supplierId'] as String?) ?? '',
       createdAt: DateTime.parse(map['createdAt'] as String),
       updatedAt: DateTime.parse(map['updatedAt'] as String),
     );
@@ -77,6 +81,7 @@ class InventoryItem {
     int? quantity,
     int? lowStockThreshold,
     String? unit,
+    String? supplierId,
   }) {
     return InventoryItem(
       id: id,
@@ -89,6 +94,7 @@ class InventoryItem {
       quantity: quantity ?? this.quantity,
       lowStockThreshold: lowStockThreshold ?? this.lowStockThreshold,
       unit: unit ?? this.unit,
+      supplierId: supplierId ?? this.supplierId,
       createdAt: createdAt,
       updatedAt: DateTime.now(),
     );

@@ -4,6 +4,7 @@ import 'screens/dashboard_screen.dart';
 import 'screens/inventory_screen.dart';
 import 'screens/invoice_screen.dart';
 import 'screens/customer_screen.dart';
+import 'screens/supplier_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -55,6 +56,7 @@ class _MainShellState extends State<MainShell> {
     InventoryScreen(),
     InvoiceScreen(),
     CustomerScreen(),
+    SupplierScreen(),
   ];
 
   @override
@@ -88,6 +90,11 @@ class _MainShellState extends State<MainShell> {
             icon: Icon(Icons.people_outline),
             selectedIcon: Icon(Icons.people),
             label: 'Customers',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.store_outlined),
+            selectedIcon: Icon(Icons.store),
+            label: 'Suppliers',
           ),
         ],
       ),

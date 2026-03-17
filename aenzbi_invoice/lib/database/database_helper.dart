@@ -2,6 +2,7 @@ import 'dart:convert';
 import '../models/inventory_item.dart';
 import '../models/customer.dart';
 import '../models/invoice.dart';
+import '../models/supplier.dart';
 import 'storage_backend.dart';
 
 class DatabaseHelper {
@@ -9,6 +10,7 @@ class DatabaseHelper {
   static const String _customersKey = 'customers';
   static const String _invoicesKey = 'invoices';
   static const String _invoiceCounterKey = 'invoice_counter';
+  static const String _suppliersKey = 'suppliers';
   static DatabaseHelper? _instance;
 
   DatabaseHelper._();
@@ -92,6 +94,41 @@ class DatabaseHelper {
     customers.removeWhere((c) => c.id == id);
     StorageBackend.setString(_customersKey,
         jsonEncode(customers.map((c) => c.toMap()).toList()));
+  }
+
+  // ─── Suppliers ───────────────────────────────────────────────────────────
+
+  Future<List<Supplier>> getAllSuppliers() async {
+    final raw = StorageBackend.getString(_suppliersKey);
+    if (raw == null || raw.isEmpty) return [];
+    final list = jsonDecode(raw) as List<dynamic>;
+    return list.map((e) => Supplier.fromMap(e as Map)).toList()
+      ..sort((a, b) => a.displayName.compareTo(b.displayName));
+  }
+
+  Future<Supplier?> getSupplier(String id) async {
+    final suppliers = await getAllSuppliers();
+    try { return suppliers.firstWhere((s) => s.id == id); } catch (_) { return null; }
+  }
+
+  Future<void> saveSupplier(Supplier supplier) async {
+    final suppliers = await getAllSuppliers();
+    final idx = suppliers.indexWhere((s) => s.id == supplier.id);
+    if (idx >= 0) suppliers[idx] = supplier; else suppliers.add(supplier);
+    StorageBackend.setString(_suppliersKey,
+        jsonEncode(suppliers.map((s) => s.toMap()).toList()));
+  }
+
+  Future<void> deleteSupplier(String id) async {
+    final suppliers = await getAllSuppliers();
+    suppliers.removeWhere((s) => s.id == id);
+    StorageBackend.setString(_suppliersKey,
+        jsonEncode(suppliers.map((s) => s.toMap()).toList()));
+  }
+
+  Future<List<InventoryItem>> getItemsBySupplier(String supplierId) async {
+    final items = await getAllInventoryItems();
+    return items.where((i) => i.supplierId == supplierId).toList();
   }
 
   // ─── Invoices ────────────────────────────────────────────────────────────
@@ -179,6 +216,7 @@ class DatabaseHelper {
     final invSummary = await getInventorySummary();
     final invSumm = await getInvoiceSummary();
     final customers = await getAllCustomers();
+    final suppliers = await getAllSuppliers();
     final recentInvoices = (await getAllInvoices()).take(5).toList();
     final lowStock = (await getAllInventoryItems())
         .where((i) => i.isLowStock)
@@ -187,6 +225,7 @@ class DatabaseHelper {
       ...invSummary,
       ...invSumm,
       'customerCount': customers.length,
+      'supplierCount': suppliers.length,
       'recentInvoices': recentInvoices,
       'lowStockItems': lowStock,
     };

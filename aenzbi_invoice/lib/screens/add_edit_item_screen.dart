@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/inventory_item.dart';
+import '../models/supplier.dart';
 import '../database/database_helper.dart';
 
 class AddEditItemScreen extends StatefulWidget {
@@ -23,6 +24,8 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
   late TextEditingController _quantityController;
   late TextEditingController _lowStockController;
   late TextEditingController _unitController;
+  List<Supplier> _suppliers = [];
+  String? _selectedSupplierId;
   bool _isSaving = false;
 
   bool get _isEditing => widget.item != null;
@@ -44,6 +47,22 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
     _lowStockController =
         TextEditingController(text: item?.lowStockThreshold.toString() ?? '5');
     _unitController = TextEditingController(text: item?.unit ?? 'pcs');
+    _selectedSupplierId =
+        (item?.supplierId.isNotEmpty ?? false) ? item!.supplierId : null;
+    _loadSuppliers();
+  }
+
+  Future<void> _loadSuppliers() async {
+    final suppliers = await DatabaseHelper.instance.getAllSuppliers();
+    if (mounted) {
+      setState(() {
+        _suppliers = suppliers;
+        if (_selectedSupplierId != null &&
+            !suppliers.any((s) => s.id == _selectedSupplierId)) {
+          _selectedSupplierId = null;
+        }
+      });
+    }
   }
 
   @override
@@ -81,6 +100,7 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
               quantity: int.parse(_quantityController.text),
               lowStockThreshold: int.parse(_lowStockController.text),
               unit: _unitController.text.trim(),
+              supplierId: _selectedSupplierId ?? '',
             )
           : InventoryItem(
               id: _generateId(),
@@ -93,6 +113,7 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
               quantity: int.parse(_quantityController.text),
               lowStockThreshold: int.parse(_lowStockController.text),
               unit: _unitController.text.trim(),
+              supplierId: _selectedSupplierId ?? '',
             );
 
       await DatabaseHelper.instance.saveInventoryItem(item);
@@ -110,10 +131,11 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: Text(_isEditing ? 'Edit Item' : 'Add Item'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        backgroundColor: cs.inversePrimary,
         actions: [
           if (_isSaving)
             const Padding(
@@ -187,6 +209,50 @@ class _AddEditItemScreenState extends State<AddEditItemScreen> {
                   ),
                 ],
               ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String?>(
+                value: _selectedSupplierId,
+                decoration: InputDecoration(
+                  labelText: 'Supplier / Vendor',
+                  prefixIcon: const Icon(Icons.store_outlined),
+                  border: const OutlineInputBorder(),
+                  suffixIcon: _selectedSupplierId != null
+                      ? IconButton(
+                          icon: const Icon(Icons.clear, size: 18),
+                          tooltip: 'Clear supplier',
+                          onPressed: () =>
+                              setState(() => _selectedSupplierId = null),
+                        )
+                      : null,
+                ),
+                hint: const Text('None'),
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text('None'),
+                  ),
+                  ..._suppliers.map((s) => DropdownMenuItem<String?>(
+                        value: s.id,
+                        child: Text(s.displayName,
+                            overflow: TextOverflow.ellipsis),
+                      )),
+                ],
+                onChanged: (v) => setState(() => _selectedSupplierId = v),
+              ),
+              if (_suppliers.isEmpty) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.info_outline,
+                        size: 13, color: cs.onSurface.withOpacity(0.4)),
+                    const SizedBox(width: 4),
+                    Text('Add suppliers in the Suppliers tab',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: cs.onSurface.withOpacity(0.4))),
+                  ],
+                ),
+              ],
               const SizedBox(height: 20),
               _sectionLabel('Pricing'),
               const SizedBox(height: 8),
