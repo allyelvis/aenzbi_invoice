@@ -14,9 +14,7 @@ PKGS=(
 )
 
 MISSING=0
-for PKG in "${PKGS[@]}"; do
-  [ -d "$CACHE_DIR/$PKG" ] || MISSING=1
-done
+for PKG in "${PKGS[@]}"; do [ -d "$CACHE_DIR/$PKG" ] || MISSING=1; done
 
 if [ "$MISSING" = "1" ]; then
   echo "Restoring pub cache..."
@@ -26,15 +24,18 @@ if [ "$MISSING" = "1" ]; then
     mkdir -p "$DEST"
     curl -sL "https://pub.dev/packages/$NAME/versions/$VER.tar.gz" \
       -o /tmp/pkg.tar.gz --max-time 30 \
-      && tar -xzf /tmp/pkg.tar.gz -C "$DEST" \
-      && echo "  OK $PKG" || echo "  FAIL $PKG"
+      && tar -xzf /tmp/pkg.tar.gz -C "$DEST" && echo "  OK $PKG" || echo "  FAIL $PKG"
   done
-  echo "Running flutter pub get..."
   flutter pub get --offline
 fi
 
 echo "Building Flutter web..."
 flutter build web
 
-echo "Serving on port 5000..."
-npx --yes serve build/web -p 5000 -s
+echo "Installing Node.js dependencies..."
+cd /home/runner/workspace/server
+npm install --production --silent 2>/dev/null || true
+cd /home/runner/workspace/aenzbi_invoice
+
+echo "Starting server on port 5000..."
+node /home/runner/workspace/server/index.js

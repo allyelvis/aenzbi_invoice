@@ -5,6 +5,8 @@ import 'screens/inventory_screen.dart';
 import 'screens/invoice_screen.dart';
 import 'screens/customer_screen.dart';
 import 'screens/supplier_screen.dart';
+import 'screens/purchase_screen.dart';
+import 'screens/settings_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,9 +45,7 @@ class AenzbiInvoiceApp extends StatelessWidget {
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
-
-  @override
-  State<MainShell> createState() => _MainShellState();
+  @override State<MainShell> createState() => _MainShellState();
 }
 
 class _MainShellState extends State<MainShell> {
@@ -55,17 +55,16 @@ class _MainShellState extends State<MainShell> {
     DashboardScreen(),
     InventoryScreen(),
     InvoiceScreen(),
+    PurchaseScreen(),
     CustomerScreen(),
     SupplierScreen(),
+    SettingsScreen(),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _pages,
-      ),
+      body: IndexedStack(index: _selectedIndex, children: _pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: (i) => setState(() => _selectedIndex = i),
@@ -87,6 +86,11 @@ class _MainShellState extends State<MainShell> {
             label: 'Invoices',
           ),
           NavigationDestination(
+            icon: Icon(Icons.shopping_cart_outlined),
+            selectedIcon: Icon(Icons.shopping_cart),
+            label: 'Purchases',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.people_outline),
             selectedIcon: Icon(Icons.people),
             label: 'Customers',
@@ -95,6 +99,11 @@ class _MainShellState extends State<MainShell> {
             icon: Icon(Icons.store_outlined),
             selectedIcon: Icon(Icons.store),
             label: 'Suppliers',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings),
+            label: 'Settings',
           ),
         ],
       ),

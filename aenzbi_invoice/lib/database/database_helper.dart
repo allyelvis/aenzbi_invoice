@@ -1,52 +1,46 @@
-import 'dart:convert';
 import '../models/inventory_item.dart';
 import '../models/customer.dart';
 import '../models/invoice.dart';
 import '../models/supplier.dart';
-import 'storage_backend.dart';
+import '../models/purchase_order.dart';
+import '../models/app_settings.dart';
+import '../api/api_client.dart';
+import '../services/currency_service.dart';
 
 class DatabaseHelper {
-  static const String _inventoryKey = 'inventory_items';
-  static const String _customersKey = 'customers';
-  static const String _invoicesKey = 'invoices';
-  static const String _invoiceCounterKey = 'invoice_counter';
-  static const String _suppliersKey = 'suppliers';
   static DatabaseHelper? _instance;
-
   DatabaseHelper._();
-
   static DatabaseHelper get instance {
     _instance ??= DatabaseHelper._();
     return _instance!;
   }
 
   Future<void> init() async {
-    await StorageBackend.init();
+    try {
+      final settings = await getSettings();
+      CurrencyService.instance.update(settings);
+    } catch (_) {}
+  }
+
+  String _generateId() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final rand = (now * 1000 + now.hashCode).abs();
+    return rand.toRadixString(16).padLeft(16, '0');
   }
 
   // ─── Inventory ───────────────────────────────────────────────────────────
 
   Future<List<InventoryItem>> getAllInventoryItems() async {
-    final raw = StorageBackend.getString(_inventoryKey);
-    if (raw == null || raw.isEmpty) return [];
-    final list = jsonDecode(raw) as List<dynamic>;
-    return list.map((e) => InventoryItem.fromMap(e as Map)).toList()
-      ..sort((a, b) => a.name.compareTo(b.name));
+    final list = await ApiClient.get('/inventory') as List<dynamic>;
+    return list.map((e) => InventoryItem.fromMap(e as Map)).toList();
   }
 
   Future<void> saveInventoryItem(InventoryItem item) async {
-    final items = await getAllInventoryItems();
-    final idx = items.indexWhere((i) => i.id == item.id);
-    if (idx >= 0) items[idx] = item; else items.add(item);
-    StorageBackend.setString(_inventoryKey,
-        jsonEncode(items.map((i) => i.toMap()).toList()));
+    await ApiClient.post('/inventory', item.toMap());
   }
 
   Future<void> deleteInventoryItem(String id) async {
-    final items = await getAllInventoryItems();
-    items.removeWhere((i) => i.id == id);
-    StorageBackend.setString(_inventoryKey,
-        jsonEncode(items.map((i) => i.toMap()).toList()));
+    await ApiClient.delete('/inventory/$id');
   }
 
   Future<Map<String, dynamic>> getInventorySummary() async {
@@ -69,11 +63,8 @@ class DatabaseHelper {
   // ─── Customers ───────────────────────────────────────────────────────────
 
   Future<List<Customer>> getAllCustomers() async {
-    final raw = StorageBackend.getString(_customersKey);
-    if (raw == null || raw.isEmpty) return [];
-    final list = jsonDecode(raw) as List<dynamic>;
-    return list.map((e) => Customer.fromMap(e as Map)).toList()
-      ..sort((a, b) => a.name.compareTo(b.name));
+    final list = await ApiClient.get('/customers') as List<dynamic>;
+    return list.map((e) => Customer.fromMap(e as Map)).toList();
   }
 
   Future<Customer?> getCustomer(String id) async {
@@ -82,28 +73,18 @@ class DatabaseHelper {
   }
 
   Future<void> saveCustomer(Customer customer) async {
-    final customers = await getAllCustomers();
-    final idx = customers.indexWhere((c) => c.id == customer.id);
-    if (idx >= 0) customers[idx] = customer; else customers.add(customer);
-    StorageBackend.setString(_customersKey,
-        jsonEncode(customers.map((c) => c.toMap()).toList()));
+    await ApiClient.post('/customers', customer.toMap());
   }
 
   Future<void> deleteCustomer(String id) async {
-    final customers = await getAllCustomers();
-    customers.removeWhere((c) => c.id == id);
-    StorageBackend.setString(_customersKey,
-        jsonEncode(customers.map((c) => c.toMap()).toList()));
+    await ApiClient.delete('/customers/$id');
   }
 
   // ─── Suppliers ───────────────────────────────────────────────────────────
 
   Future<List<Supplier>> getAllSuppliers() async {
-    final raw = StorageBackend.getString(_suppliersKey);
-    if (raw == null || raw.isEmpty) return [];
-    final list = jsonDecode(raw) as List<dynamic>;
-    return list.map((e) => Supplier.fromMap(e as Map)).toList()
-      ..sort((a, b) => a.displayName.compareTo(b.displayName));
+    final list = await ApiClient.get('/suppliers') as List<dynamic>;
+    return list.map((e) => Supplier.fromMap(e as Map)).toList();
   }
 
   Future<Supplier?> getSupplier(String id) async {
@@ -112,18 +93,11 @@ class DatabaseHelper {
   }
 
   Future<void> saveSupplier(Supplier supplier) async {
-    final suppliers = await getAllSuppliers();
-    final idx = suppliers.indexWhere((s) => s.id == supplier.id);
-    if (idx >= 0) suppliers[idx] = supplier; else suppliers.add(supplier);
-    StorageBackend.setString(_suppliersKey,
-        jsonEncode(suppliers.map((s) => s.toMap()).toList()));
+    await ApiClient.post('/suppliers', supplier.toMap());
   }
 
   Future<void> deleteSupplier(String id) async {
-    final suppliers = await getAllSuppliers();
-    suppliers.removeWhere((s) => s.id == id);
-    StorageBackend.setString(_suppliersKey,
-        jsonEncode(suppliers.map((s) => s.toMap()).toList()));
+    await ApiClient.delete('/suppliers/$id');
   }
 
   Future<List<InventoryItem>> getItemsBySupplier(String supplierId) async {
@@ -134,100 +108,100 @@ class DatabaseHelper {
   // ─── Invoices ────────────────────────────────────────────────────────────
 
   Future<List<Invoice>> getAllInvoices() async {
-    final raw = StorageBackend.getString(_invoicesKey);
-    if (raw == null || raw.isEmpty) return [];
-    final list = jsonDecode(raw) as List<dynamic>;
-    return list.map((e) => Invoice.fromMap(e as Map)).toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-  }
-
-  Future<void> saveInvoice(Invoice invoice) async {
-    final invoices = await getAllInvoices();
-    final idx = invoices.indexWhere((i) => i.id == invoice.id);
-    if (idx >= 0) invoices[idx] = invoice; else invoices.add(invoice);
-    StorageBackend.setString(_invoicesKey,
-        jsonEncode(invoices.map((i) => i.toMap()).toList()));
-  }
-
-  Future<void> deleteInvoice(String id) async {
-    final invoices = await getAllInvoices();
-    invoices.removeWhere((i) => i.id == id);
-    StorageBackend.setString(_invoicesKey,
-        jsonEncode(invoices.map((i) => i.toMap()).toList()));
+    final list = await ApiClient.get('/invoices') as List<dynamic>;
+    return list.map((e) => Invoice.fromMap(e as Map)).toList();
   }
 
   Future<String> getNextInvoiceNumber() async {
-    final raw = StorageBackend.getString(_invoiceCounterKey);
-    int counter = raw != null ? (int.tryParse(raw) ?? 0) : 0;
-    counter++;
-    StorageBackend.setString(_invoiceCounterKey, counter.toString());
-    final year = DateTime.now().year;
-    return 'INV-$year-${counter.toString().padLeft(4, '0')}';
+    final res = await ApiClient.get('/invoices/next-number') as Map<dynamic, dynamic>;
+    return res['number'] as String;
+  }
+
+  Future<void> saveInvoice(Invoice invoice) async {
+    await ApiClient.post('/invoices', invoice.toMap());
+  }
+
+  Future<void> deleteInvoice(String id) async {
+    await ApiClient.delete('/invoices/$id');
   }
 
   Future<Map<String, dynamic>> getInvoiceSummary() async {
-    final invoices = await getAllInvoices();
-    double totalPaid = 0, totalOutstanding = 0, totalOverdue = 0;
-    int paidCount = 0, outstandingCount = 0, overdueCount = 0, draftCount = 0;
-    for (final inv in invoices) {
-      final effective = inv.effectiveStatus;
-      if (effective == InvoiceStatus.paid) {
-        totalPaid += inv.total;
-        paidCount++;
-      } else if (effective == InvoiceStatus.overdue) {
-        totalOverdue += inv.total;
-        overdueCount++;
-      } else if (effective == InvoiceStatus.sent) {
-        totalOutstanding += inv.total;
-        outstandingCount++;
-      } else {
-        draftCount++;
-      }
-    }
+    final res = await ApiClient.get('/invoices/summary') as Map<dynamic, dynamic>;
     return {
-      'totalPaid': totalPaid,
-      'totalOutstanding': totalOutstanding,
-      'totalOverdue': totalOverdue,
-      'paidCount': paidCount,
-      'outstandingCount': outstandingCount,
-      'overdueCount': overdueCount,
-      'draftCount': draftCount,
-      'totalInvoices': invoices.length,
+      'totalPaid': (res['totalPaid'] as num?)?.toDouble() ?? 0.0,
+      'totalOutstanding': (res['totalOutstanding'] as num?)?.toDouble() ?? 0.0,
+      'totalOverdue': (res['totalOverdue'] as num?)?.toDouble() ?? 0.0,
     };
   }
 
-  Future<List<Map<String, dynamic>>> getMonthlyRevenue({int months = 6}) async {
-    final invoices = await getAllInvoices();
-    final now = DateTime.now();
-    return List.generate(months, (i) {
-      final month = DateTime(now.year, now.month - (months - 1 - i), 1);
-      final paid = invoices.where((inv) =>
-          inv.effectiveStatus == InvoiceStatus.paid &&
-          inv.invoiceDate.year == month.year &&
-          inv.invoiceDate.month == month.month);
-      return {
-        'month': month,
-        'revenue': paid.fold<double>(0, (sum, inv) => sum + inv.total),
-      };
-    });
+  // ─── Purchase Orders ──────────────────────────────────────────────────────
+
+  Future<List<PurchaseOrder>> getAllPurchaseOrders() async {
+    final list = await ApiClient.get('/purchases') as List<dynamic>;
+    return list.map((e) => PurchaseOrder.fromMap(e as Map)).toList();
   }
+
+  Future<String> getNextPONumber() async {
+    final res = await ApiClient.get('/purchases/next-number') as Map<dynamic, dynamic>;
+    return res['number'] as String;
+  }
+
+  Future<void> savePurchaseOrder(PurchaseOrder po) async {
+    await ApiClient.post('/purchases', po.toMap());
+  }
+
+  Future<void> deletePurchaseOrder(String id) async {
+    await ApiClient.delete('/purchases/$id');
+  }
+
+  // ─── Settings ────────────────────────────────────────────────────────────
+
+  Future<AppSettings> getSettings() async {
+    final res = await ApiClient.get('/settings') as Map<dynamic, dynamic>;
+    final map = res.map((k, v) => MapEntry(k.toString(), v.toString()));
+    return AppSettings.fromSettingsMap(map);
+  }
+
+  Future<void> saveSettings(AppSettings settings) async {
+    final map = settings.toSettingsMap();
+    await ApiClient.post('/settings', map.map((k, v) => MapEntry(k, v as dynamic)));
+    CurrencyService.instance.update(settings);
+  }
+
+  // ─── Dashboard ───────────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>> getDashboardSummary() async {
-    final invSummary = await getInventorySummary();
-    final invSumm = await getInvoiceSummary();
-    final customers = await getAllCustomers();
-    final suppliers = await getAllSuppliers();
-    final recentInvoices = (await getAllInvoices()).take(5).toList();
-    final lowStock = (await getAllInventoryItems())
-        .where((i) => i.isLowStock)
+    final res = await ApiClient.get('/dashboard') as Map<dynamic, dynamic>;
+    final recent = (res['recentInvoices'] as List<dynamic>? ?? [])
+        .map((e) => Invoice.fromMap(e as Map))
+        .toList();
+    final lowStock = (res['lowStockItems'] as List<dynamic>? ?? [])
+        .map((e) => InventoryItem.fromMap(e as Map))
         .toList();
     return {
-      ...invSummary,
-      ...invSumm,
-      'customerCount': customers.length,
-      'supplierCount': suppliers.length,
-      'recentInvoices': recentInvoices,
+      'totalPaid': (res['totalPaid'] as num?)?.toDouble() ?? 0.0,
+      'totalOutstanding': (res['totalOutstanding'] as num?)?.toDouble() ?? 0.0,
+      'totalOverdue': (res['totalOverdue'] as num?)?.toDouble() ?? 0.0,
+      'totalValue': (res['totalValue'] as num?)?.toDouble() ?? 0.0,
+      'customerCount': (res['customerCount'] as num?)?.toInt() ?? 0,
+      'supplierCount': (res['supplierCount'] as num?)?.toInt() ?? 0,
+      'totalInvoices': (res['totalInvoices'] as num?)?.toInt() ?? 0,
+      'totalPurchaseOrders': (res['totalPurchaseOrders'] as num?)?.toInt() ?? 0,
+      'lowStockCount': (res['lowStockCount'] as num?)?.toInt() ?? 0,
+      'outOfStockCount': (res['outOfStockCount'] as num?)?.toInt() ?? 0,
+      'recentInvoices': recent,
       'lowStockItems': lowStock,
     };
+  }
+
+  Future<List<Map<String, dynamic>>> getMonthlyRevenue() async {
+    final list = await ApiClient.get('/dashboard/monthly') as List<dynamic>;
+    return list.map((e) {
+      final m = e as Map<dynamic, dynamic>;
+      return {
+        'month': DateTime.parse(m['month'] as String),
+        'revenue': (m['revenue'] as num).toDouble(),
+      };
+    }).toList();
   }
 }

@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
 import '../models/invoice.dart';
+import '../models/app_settings.dart';
+import '../services/currency_service.dart';
+import '../services/print_service.dart';
 import 'add_edit_invoice_screen.dart';
 
 class InvoiceScreen extends StatefulWidget {
@@ -16,6 +19,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   Map<String, dynamic> _summary = {};
   bool _loading = true;
   InvoiceStatus? _statusFilter;
+  AppSettings _settings = const AppSettings();
 
   @override
   void initState() {
@@ -27,9 +31,11 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     setState(() => _loading = true);
     final invoices = await DatabaseHelper.instance.getAllInvoices();
     final summary = await DatabaseHelper.instance.getInvoiceSummary();
+    final settings = await DatabaseHelper.instance.getSettings();
     setState(() {
       _all = invoices;
       _summary = summary;
+      _settings = settings;
       _applyFilter();
       _loading = false;
     });
@@ -288,6 +294,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                     iconSize: 18,
                     onSelected: (v) {
                       if (v == 'edit') _navigateToEdit(invoice);
+                      if (v == 'print') PrintService.printInvoice(invoice, _settings);
                       if (v == 'mark_sent') _markAs(invoice, InvoiceStatus.sent);
                       if (v == 'mark_paid') _markAs(invoice, InvoiceStatus.paid);
                       if (v == 'mark_draft') _markAs(invoice, InvoiceStatus.draft);
@@ -295,6 +302,12 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                     },
                     itemBuilder: (_) => [
                       const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                      const PopupMenuItem(value: 'print', child: ListTile(
+                        dense: true, contentPadding: EdgeInsets.zero,
+                        leading: Icon(Icons.print_outlined, size: 18),
+                        title: Text('Print / Export PDF'),
+                      )),
+                      const PopupMenuDivider(),
                       if (status != InvoiceStatus.sent)
                         const PopupMenuItem(value: 'mark_sent', child: Text('Mark as Sent')),
                       if (status != InvoiceStatus.paid)
