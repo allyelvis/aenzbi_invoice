@@ -417,6 +417,193 @@ app.get('/api/invoices/summary', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── Reports ─────────────────────────────────────────────────────────────────
+
+// Helper: compute invoice total inline
+const invTotal = `
+  COALESCE(
+    (SELECT SUM((item->>'quantity')::numeric*(item->>'unitPrice')::numeric)
+     FROM jsonb_array_elements(items) item), 0
+  ) * (1 + tax_rate/100.0)
+`;
+
+app.get('/api/reports/sales', async (req, res) => {
+  try {
+    const [monthly, byCustomer, byStatus] = await Promise.all([
+      pool.query(`
+        SELECT date_trunc('month', invoice_date) as month,
+               COUNT(*) as invoice_count,
+               SUM(${invTotal}) as total,
+               SUM(CASE WHEN status='paid' THEN ${invTotal} ELSE 0 END) as paid
+        FROM invoices
+        WHERE invoice_date >= NOW() - INTERVAL '12 months'
+        GROUP BY month ORDER BY month ASC
+      `),
+      pool.query(`
+        SELECT customer_name,
+               COUNT(*) as invoice_count,
+               SUM(${invTotal}) as total_invoiced,
+               SUM(CASE WHEN status='paid' THEN ${invTotal} ELSE 0 END) as total_paid
+        FROM invoices
+        GROUP BY customer_name ORDER BY total_invoiced DESC LIMIT 10
+      `),
+      pool.query(`
+        SELECT status, COUNT(*) as count, SUM(${invTotal}) as total
+        FROM invoices GROUP BY status
+      `),
+    ]);
+    res.json({
+      monthly: monthly.rows.map(r => ({
+        month: r.month, invoiceCount: parseInt(r.invoice_count),
+        total: parseFloat(r.total || 0), paid: parseFloat(r.paid || 0),
+      })),
+      byCustomer: byCustomer.rows.map(r => ({
+        customerName: r.customer_name, invoiceCount: parseInt(r.invoice_count),
+        totalInvoiced: parseFloat(r.total_invoiced || 0),
+        totalPaid: parseFloat(r.total_paid || 0),
+      })),
+      byStatus: byStatus.rows.map(r => ({
+        status: r.status, count: parseInt(r.count),
+        total: parseFloat(r.total || 0),
+      })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/reports/inventory', async (req, res) => {
+  try {
+    const [byCategory, lowStock, summary] = await Promise.all([
+      pool.query(`
+        SELECT COALESCE(NULLIF(category,''),'Uncategorised') as category,
+               COUNT(*) as item_count,
+               SUM(price*quantity) as total_value,
+               SUM(quantity) as total_qty,
+               SUM(CASE WHEN quantity=0 THEN 1 ELSE 0 END) as out_of_stock,
+               SUM(CASE WHEN quantity>0 AND quantity<=low_stock_threshold THEN 1 ELSE 0 END) as low_stock
+        FROM inventory_items
+        GROUP BY category ORDER BY total_value DESC
+      `),
+      pool.query(`
+        SELECT id, name, category, quantity, low_stock_threshold, unit, price
+        FROM inventory_items
+        WHERE quantity <= low_stock_threshold
+        ORDER BY quantity ASC LIMIT 20
+      `),
+      pool.query(`
+        SELECT COUNT(*) as total_items,
+               SUM(price*quantity) as total_value,
+               SUM(quantity) as total_units,
+               SUM(CASE WHEN quantity=0 THEN price*0 ELSE cost_price*quantity END) as total_cost
+        FROM inventory_items
+      `),
+    ]);
+    res.json({
+      byCategory: byCategory.rows.map(r => ({
+        category: r.category, itemCount: parseInt(r.item_count),
+        totalValue: parseFloat(r.total_value || 0),
+        totalQty: parseInt(r.total_qty || 0),
+        outOfStock: parseInt(r.out_of_stock || 0),
+        lowStock: parseInt(r.low_stock || 0),
+      })),
+      lowStockItems: lowStock.rows,
+      summary: {
+        totalItems: parseInt(summary.rows[0].total_items || 0),
+        totalValue: parseFloat(summary.rows[0].total_value || 0),
+        totalUnits: parseInt(summary.rows[0].total_units || 0),
+        totalCost: parseFloat(summary.rows[0].total_cost || 0),
+      },
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+const poTotal = `
+  COALESCE(
+    (SELECT SUM((item->>'quantity')::numeric*(item->>'unitCost')::numeric)
+     FROM jsonb_array_elements(items) item), 0
+  ) * (1 + tax_rate/100.0)
+`;
+
+app.get('/api/reports/purchases', async (req, res) => {
+  try {
+    const [bySupplier, byStatus, monthly] = await Promise.all([
+      pool.query(`
+        SELECT supplier_name,
+               COUNT(*) as po_count,
+               SUM(${poTotal}) as total_value,
+               SUM(CASE WHEN status='received' THEN ${poTotal} ELSE 0 END) as received_value
+        FROM purchase_orders
+        GROUP BY supplier_name ORDER BY total_value DESC LIMIT 10
+      `),
+      pool.query(`
+        SELECT status, COUNT(*) as count, SUM(${poTotal}) as total
+        FROM purchase_orders GROUP BY status
+      `),
+      pool.query(`
+        SELECT date_trunc('month', order_date) as month,
+               COUNT(*) as po_count,
+               SUM(${poTotal}) as total
+        FROM purchase_orders
+        WHERE order_date >= NOW() - INTERVAL '12 months'
+        GROUP BY month ORDER BY month ASC
+      `),
+    ]);
+    res.json({
+      bySupplier: bySupplier.rows.map(r => ({
+        supplierName: r.supplier_name, poCount: parseInt(r.po_count),
+        totalValue: parseFloat(r.total_value || 0),
+        receivedValue: parseFloat(r.received_value || 0),
+      })),
+      byStatus: byStatus.rows.map(r => ({
+        status: r.status, count: parseInt(r.count),
+        total: parseFloat(r.total || 0),
+      })),
+      monthly: monthly.rows.map(r => ({
+        month: r.month, poCount: parseInt(r.po_count),
+        total: parseFloat(r.total || 0),
+      })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/reports/summary', async (req, res) => {
+  try {
+    const [inv, po, cust, supp] = await Promise.all([
+      pool.query(`
+        SELECT
+          SUM(CASE WHEN status='paid' THEN ${invTotal} ELSE 0 END) as revenue,
+          SUM(CASE WHEN status IN('draft','sent') AND NOT (status='sent' AND due_date<NOW()) THEN ${invTotal} ELSE 0 END) as outstanding,
+          SUM(CASE WHEN status='sent' AND due_date<NOW() THEN ${invTotal} ELSE 0 END) as overdue,
+          COUNT(*) as total_invoices,
+          COUNT(CASE WHEN status='paid' THEN 1 END) as paid_count
+        FROM invoices
+      `),
+      pool.query(`
+        SELECT
+          SUM(${poTotal}) as total_ordered,
+          SUM(CASE WHEN status='received' THEN ${poTotal} ELSE 0 END) as total_received,
+          COUNT(*) as total_pos
+        FROM purchase_orders
+      `),
+      pool.query('SELECT COUNT(*) as cnt FROM customers'),
+      pool.query('SELECT COUNT(*) as cnt FROM suppliers'),
+    ]);
+    const r = inv.rows[0], p = po.rows[0];
+    res.json({
+      revenue: parseFloat(r.revenue || 0),
+      outstanding: parseFloat(r.outstanding || 0),
+      overdue: parseFloat(r.overdue || 0),
+      totalInvoices: parseInt(r.total_invoices || 0),
+      paidInvoices: parseInt(r.paid_count || 0),
+      totalOrdered: parseFloat(p.total_ordered || 0),
+      totalReceived: parseFloat(p.total_received || 0),
+      totalPOs: parseInt(p.total_pos || 0),
+      customers: parseInt(cust.rows[0].cnt || 0),
+      suppliers: parseInt(supp.rows[0].cnt || 0),
+      netPosition: parseFloat(r.revenue || 0) - parseFloat(p.total_received || 0),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── Serve Flutter Web ────────────────────────────────────────────────────────
 const webDir = path.join(__dirname, '../aenzbi_invoice/build/web');
 app.use(express.static(webDir));
