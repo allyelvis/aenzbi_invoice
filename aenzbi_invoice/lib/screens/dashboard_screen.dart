@@ -67,10 +67,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildStatsGrid(ColorScheme cs) {
     final paid = (_data['totalPaid'] ?? 0.0) as double;
-    final outstanding = ((_data['totalOutstanding'] ?? 0.0) as double) +
-        ((_data['totalOverdue'] ?? 0.0) as double);
+    final outstanding = (_data['totalOutstanding'] ?? 0.0) as double;
+    final overdue = (_data['totalOverdue'] ?? 0.0) as double;
     final invValue = (_data['totalValue'] ?? 0.0) as double;
     final customers = _data['customerCount'] ?? 0;
+    final suppliers = _data['supplierCount'] ?? 0;
+    final totalInvoices = _data['totalInvoices'] ?? 0;
+    final lowStock = (_data['lowStockCount'] ?? 0) + (_data['outOfStockCount'] ?? 0);
 
     return GridView.count(
       crossAxisCount: 2,
@@ -78,23 +81,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
       mainAxisSpacing: 12,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      childAspectRatio: 1.5,
+      childAspectRatio: 1.6,
       children: [
         _StatCard(
           label: 'Revenue',
-          value: '\$${paid.toStringAsFixed(2)}',
+          value: '\$${_compact(paid)}',
           icon: Icons.trending_up,
           color: Colors.green,
         ),
         _StatCard(
           label: 'Outstanding',
-          value: '\$${outstanding.toStringAsFixed(2)}',
+          value: '\$${_compact(outstanding)}',
           icon: Icons.pending_actions,
-          color: Colors.orange,
+          color: Colors.blue,
+        ),
+        _StatCard(
+          label: 'Overdue',
+          value: '\$${_compact(overdue)}',
+          icon: Icons.warning_amber,
+          color: overdue > 0 ? Colors.red : cs.onSurface.withOpacity(0.4),
         ),
         _StatCard(
           label: 'Inventory',
-          value: '\$${invValue.toStringAsFixed(2)}',
+          value: '\$${_compact(invValue)}',
           icon: Icons.inventory_2,
           color: cs.primary,
         ),
@@ -104,8 +113,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
           icon: Icons.people,
           color: Colors.purple,
         ),
+        _StatCard(
+          label: 'Suppliers',
+          value: '$suppliers',
+          icon: Icons.store,
+          color: Colors.teal,
+        ),
+        _StatCard(
+          label: 'Invoices',
+          value: '$totalInvoices',
+          icon: Icons.receipt_long,
+          color: Colors.indigo,
+        ),
+        _StatCard(
+          label: 'Low Stock',
+          value: '$lowStock',
+          icon: Icons.warning_outlined,
+          color: lowStock > 0 ? Colors.orange : cs.onSurface.withOpacity(0.4),
+        ),
       ],
     );
+  }
+
+  String _compact(double v) {
+    if (v >= 1000000) return '${(v / 1000000).toStringAsFixed(1)}M';
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}k';
+    return v.toStringAsFixed(2);
   }
 
   Widget _buildRevenueChart(ColorScheme cs) {
@@ -125,7 +158,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: _monthly.isEmpty
                   ? Center(
                       child: Text('No data yet',
-                          style: TextStyle(color: cs.onSurface.withOpacity(0.4))),
+                          style: TextStyle(
+                              color: cs.onSurface.withOpacity(0.4))),
                     )
                   : _BarChart(data: _monthly, color: cs.primary),
             ),
@@ -136,9 +170,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildRecentInvoices(ColorScheme cs) {
-    final invoices = (_data['recentInvoices'] as List?)
-            ?.cast<Invoice>() ??
-        [];
+    final invoices =
+        (_data['recentInvoices'] as List?)?.cast<Invoice>() ?? [];
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -148,15 +181,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Row(
               children: [
                 Text('Recent Invoices',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        )),
+                    style:
+                        Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            )),
                 const Spacer(),
-                if (invoices.isNotEmpty)
-                  TextButton(
-                    onPressed: () {},
-                    child: const Text('See all'),
-                  ),
               ],
             ),
             if (invoices.isEmpty)
@@ -177,9 +206,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildLowStockAlerts(ColorScheme cs) {
-    final items = (_data['lowStockItems'] as List?)
-            ?.cast<InventoryItem>() ??
-        [];
+    final items =
+        (_data['lowStockItems'] as List?)?.cast<InventoryItem>() ?? [];
     if (items.isEmpty) return const SizedBox.shrink();
     return Card(
       child: Padding(
@@ -189,12 +217,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
           children: [
             Row(
               children: [
-                Icon(Icons.warning_amber, color: Colors.orange, size: 20),
+                const Icon(Icons.warning_amber, color: Colors.orange, size: 20),
                 const SizedBox(width: 8),
                 Text('Low Stock Alerts',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        )),
+                    style:
+                        Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            )),
               ],
             ),
             const SizedBox(height: 8),
@@ -210,7 +239,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       item.name[0].toUpperCase(),
                       style: TextStyle(
                         fontSize: 12,
-                        color: item.isOutOfStock ? cs.error : Colors.orange,
+                        color: item.isOutOfStock
+                            ? cs.error
+                            : Colors.orange,
                       ),
                     ),
                   ),
@@ -234,6 +265,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
+// ─── Stat Card ───────────────────────────────────────────────────────────────
+
 class _StatCard extends StatelessWidget {
   final String label;
   final String value;
@@ -256,18 +289,13 @@ class _StatCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(icon, size: 18, color: color),
-                ),
-                const Spacer(),
-              ],
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, size: 18, color: color),
             ),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -275,7 +303,7 @@ class _StatCard extends StatelessWidget {
                 Text(
                   value,
                   style: TextStyle(
-                    fontSize: 18,
+                    fontSize: 17,
                     fontWeight: FontWeight.bold,
                     color: color,
                   ),
@@ -285,7 +313,7 @@ class _StatCard extends StatelessWidget {
                 Text(
                   label,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 11,
                     color: Theme.of(context)
                         .colorScheme
                         .onSurface
@@ -300,6 +328,8 @@ class _StatCard extends StatelessWidget {
     );
   }
 }
+
+// ─── Bar Chart ───────────────────────────────────────────────────────────────
 
 class _BarChart extends StatelessWidget {
   final List<Map<String, dynamic>> data;
@@ -319,7 +349,6 @@ class _BarChart extends StatelessWidget {
         final revenue = d['revenue'] as double;
         final month = d['month'] as DateTime;
         final ratio = maxVal > 0 ? revenue / maxVal : 0.0;
-        final monthLabel = _monthLabel(month.month);
         return Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -328,7 +357,9 @@ class _BarChart extends StatelessWidget {
               children: [
                 if (revenue > 0)
                   Text(
-                    '\$${revenue >= 1000 ? '${(revenue / 1000).toStringAsFixed(1)}k' : revenue.toStringAsFixed(0)}',
+                    revenue >= 1000
+                        ? '\$${(revenue / 1000).toStringAsFixed(1)}k'
+                        : '\$${revenue.toStringAsFixed(0)}',
                     style: TextStyle(fontSize: 9, color: color),
                     textAlign: TextAlign.center,
                   ),
@@ -346,7 +377,7 @@ class _BarChart extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  monthLabel,
+                  _monthLabel(month.month),
                   style: TextStyle(
                     fontSize: 10,
                     color: Theme.of(context)
@@ -372,6 +403,8 @@ class _BarChart extends StatelessWidget {
   }
 }
 
+// ─── Invoice Tile ─────────────────────────────────────────────────────────────
+
 class _InvoiceTile extends StatelessWidget {
   final Invoice invoice;
   final ColorScheme cs;
@@ -383,7 +416,7 @@ class _InvoiceTile extends StatelessWidget {
     final status = invoice.effectiveStatus;
     final statusColor = _statusColor(status, cs);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         children: [
           Expanded(

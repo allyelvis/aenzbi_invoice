@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/inventory_item.dart';
+import '../models/supplier.dart';
 import '../database/database_helper.dart';
 import 'add_edit_item_screen.dart';
 
@@ -16,9 +17,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
   List<InventoryItem> _items = [];
   List<InventoryItem> _filtered = [];
   Map<String, dynamic> _summary = {};
+  Map<String, Supplier> _supplierMap = {};
   bool _loading = true;
   String _searchQuery = '';
   String? _categoryFilter;
+  String? _supplierFilter;
   _SortOption _sortOption = _SortOption.name;
   List<String> _categories = [];
   final TextEditingController _searchController = TextEditingController();
@@ -40,6 +43,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
     try {
       final items = await DatabaseHelper.instance.getAllInventoryItems();
       final summary = await DatabaseHelper.instance.getInventorySummary();
+      final suppliers = await DatabaseHelper.instance.getAllSuppliers();
+      final supplierMap = {for (final s in suppliers) s.id: s};
       final cats = items
           .map((i) => i.category)
           .where((c) => c.isNotEmpty)
@@ -50,6 +55,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
         _items = items;
         _categories = cats;
         _summary = summary;
+        _supplierMap = supplierMap;
         _applyFilter();
         _loading = false;
       });
@@ -72,11 +78,20 @@ class _InventoryScreenState extends State<InventoryScreen> {
               item.name.toLowerCase().contains(lower) ||
               item.sku.toLowerCase().contains(lower) ||
               item.category.toLowerCase().contains(lower) ||
-              item.description.toLowerCase().contains(lower))
+              item.description.toLowerCase().contains(lower) ||
+              (_supplierMap[item.supplierId]
+                          ?.displayName
+                          .toLowerCase()
+                          .contains(lower) ??
+                      false))
           .toList();
     }
     if (_categoryFilter != null) {
       result = result.where((i) => i.category == _categoryFilter).toList();
+    }
+    if (_supplierFilter != null) {
+      result =
+          result.where((i) => i.supplierId == _supplierFilter).toList();
     }
     switch (_sortOption) {
       case _SortOption.name:
@@ -143,13 +158,16 @@ class _InventoryScreenState extends State<InventoryScreen> {
   void _showSortSheet() {
     showModalBottomSheet(
       context: context,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           const Padding(
             padding: EdgeInsets.all(16),
             child: Text('Sort By',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                style:
+                    TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           ),
           ..._SortOption.values.map((opt) => RadioListTile<_SortOption>(
                 value: opt,
@@ -177,13 +195,26 @@ class _InventoryScreenState extends State<InventoryScreen> {
     }
   }
 
+  // Suppliers that have at least one item
+  List<Supplier> get _linkedSuppliers {
+    final ids = _items
+        .where((i) => i.supplierId.isNotEmpty)
+        .map((i) => i.supplierId)
+        .toSet();
+    return ids
+        .map((id) => _supplierMap[id])
+        .whereType<Supplier>()
+        .toList()
+      ..sort((a, b) => a.displayName.compareTo(b.displayName));
+  }
+
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: Text('Inventory (${_items.length})'),
-        backgroundColor: colorScheme.inversePrimary,
+        backgroundColor: cs.inversePrimary,
         actions: [
           IconButton(
             icon: const Icon(Icons.sort),
@@ -201,7 +232,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
               children: [
-                _buildSummaryBar(colorScheme),
+                _buildSummaryBar(cs),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
                   child: TextField(
@@ -209,14 +240,15 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     onChanged: (v) =>
                         setState(() { _searchQuery = v; _applyFilter(); }),
                     decoration: InputDecoration(
-                      hintText: 'Search by name, SKU, category…',
+                      hintText: 'Search by name, SKU, supplier…',
                       prefixIcon: const Icon(Icons.search),
                       suffixIcon: _searchQuery.isNotEmpty
                           ? IconButton(
                               icon: const Icon(Icons.clear),
                               onPressed: () {
                                 _searchController.clear();
-                                setState(() { _searchQuery = ''; _applyFilter(); });
+                                setState(
+                                    () { _searchQuery = ''; _applyFilter(); });
                               })
                           : null,
                       border: OutlineInputBorder(
@@ -225,16 +257,17 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     ),
                   ),
                 ),
-                if (_categories.isNotEmpty) _buildCategoryChips(colorScheme),
+                if (_categories.isNotEmpty || _linkedSuppliers.isNotEmpty)
+                  _buildFilterChips(cs),
                 Expanded(
                   child: _filtered.isEmpty
-                      ? _buildEmptyState(colorScheme)
+                      ? _buildEmptyState(cs)
                       : ListView.builder(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 4),
                           itemCount: _filtered.length,
                           itemBuilder: (_, i) =>
-                              _buildItemCard(_filtered[i], colorScheme),
+                              _buildItemCard(_filtered[i], cs),
                         ),
                 ),
               ],
@@ -247,7 +280,8 @@ class _InventoryScreenState extends State<InventoryScreen> {
     );
   }
 
-  Widget _buildCategoryChips(ColorScheme cs) {
+  Widget _buildFilterChips(ColorScheme cs) {
+    final suppliers = _linkedSuppliers;
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
@@ -255,9 +289,12 @@ class _InventoryScreenState extends State<InventoryScreen> {
         children: [
           FilterChip(
             label: const Text('All'),
-            selected: _categoryFilter == null,
-            onSelected: (_) =>
-                setState(() { _categoryFilter = null; _applyFilter(); }),
+            selected: _categoryFilter == null && _supplierFilter == null,
+            onSelected: (_) => setState(() {
+              _categoryFilter = null;
+              _supplierFilter = null;
+              _applyFilter();
+            }),
           ),
           ..._categories.map((cat) => Padding(
                 padding: const EdgeInsets.only(left: 8),
@@ -266,10 +303,26 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   selected: _categoryFilter == cat,
                   onSelected: (_) => setState(() {
                     _categoryFilter = _categoryFilter == cat ? null : cat;
+                    _supplierFilter = null;
                     _applyFilter();
                   }),
                 ),
               )),
+          if (suppliers.isNotEmpty)
+            ...suppliers.map((s) => Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: FilterChip(
+                    avatar: const Icon(Icons.store_outlined, size: 14),
+                    label: Text(s.displayName),
+                    selected: _supplierFilter == s.id,
+                    onSelected: (_) => setState(() {
+                      _supplierFilter =
+                          _supplierFilter == s.id ? null : s.id;
+                      _categoryFilter = null;
+                      _applyFilter();
+                    }),
+                  ),
+                )),
         ],
       ),
     );
@@ -293,7 +346,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           _summaryTile(cs, Icons.inventory_2, '$total', 'Items'),
           _divider(),
           _summaryTile(cs, Icons.attach_money,
-              '\$${value.toStringAsFixed(2)}', 'Value'),
+              '\$${_compactValue(value)}', 'Value'),
           _divider(),
           _summaryTile(cs, Icons.warning_amber, '$low', 'Low Stock',
               color: low > 0 ? Colors.orange : null),
@@ -303,6 +356,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
         ],
       ),
     );
+  }
+
+  String _compactValue(double v) {
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}k';
+    return v.toStringAsFixed(2);
   }
 
   Widget _divider() =>
@@ -334,6 +392,11 @@ class _InventoryScreenState extends State<InventoryScreen> {
       stockColor = Colors.orange;
       stockLabel = 'Low: ${item.quantity} ${item.unit}';
     }
+
+    final supplier = item.supplierId.isNotEmpty
+        ? _supplierMap[item.supplierId]
+        : null;
+
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: InkWell(
@@ -360,15 +423,19 @@ class _InventoryScreenState extends State<InventoryScreen> {
                     Text(item.name,
                         style: const TextStyle(
                             fontWeight: FontWeight.w600, fontSize: 14)),
-                    if (item.sku.isNotEmpty || item.category.isNotEmpty)
+                    if (item.sku.isNotEmpty ||
+                        item.category.isNotEmpty ||
+                        supplier != null)
                       Text(
                         [
                           if (item.sku.isNotEmpty) 'SKU: ${item.sku}',
                           if (item.category.isNotEmpty) item.category,
+                          if (supplier != null) supplier.displayName,
                         ].join(' • '),
                         style: TextStyle(
                             fontSize: 11,
                             color: cs.onSurface.withOpacity(0.6)),
+                        overflow: TextOverflow.ellipsis,
                       ),
                     const SizedBox(height: 4),
                     Row(
@@ -386,6 +453,16 @@ class _InventoryScreenState extends State<InventoryScreen> {
                                 fontSize: 14)),
                       ],
                     ),
+                    if (item.costPrice > 0) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Cost: \$${item.costPrice.toStringAsFixed(2)}  '
+                        'Margin: ${item.price > 0 ? (((item.price - item.costPrice) / item.price) * 100).toStringAsFixed(0) : 0}%',
+                        style: TextStyle(
+                            fontSize: 10,
+                            color: cs.onSurface.withOpacity(0.5)),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -418,7 +495,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
               size: 72, color: cs.onSurface.withOpacity(0.3)),
           const SizedBox(height: 16),
           Text(
-            _searchQuery.isNotEmpty || _categoryFilter != null
+            _searchQuery.isNotEmpty ||
+                    _categoryFilter != null ||
+                    _supplierFilter != null
                 ? 'No items match your filters'
                 : 'No inventory items yet',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -426,10 +505,13 @@ class _InventoryScreenState extends State<InventoryScreen> {
                 ),
           ),
           const SizedBox(height: 8),
-          if (_searchQuery.isEmpty && _categoryFilter == null)
+          if (_searchQuery.isEmpty &&
+              _categoryFilter == null &&
+              _supplierFilter == null)
             Text('Tap + Add Item to get started',
                 style: TextStyle(
-                    fontSize: 13, color: cs.onSurface.withOpacity(0.4))),
+                    fontSize: 13,
+                    color: cs.onSurface.withOpacity(0.4))),
         ],
       ),
     );
