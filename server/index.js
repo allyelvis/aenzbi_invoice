@@ -84,10 +84,39 @@ async function initSchema() {
       notes TEXT NOT NULL DEFAULT '',
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS quotes (
+      id TEXT PRIMARY KEY,
+      quote_number TEXT NOT NULL,
+      customer_id TEXT,
+      customer_name TEXT NOT NULL DEFAULT '',
+      customer_email TEXT NOT NULL DEFAULT '',
+      items JSONB NOT NULL DEFAULT '[]',
+      status TEXT NOT NULL DEFAULT 'draft',
+      quote_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      valid_until TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '30 days',
+      notes TEXT NOT NULL DEFAULT '',
+      tax_rate NUMERIC(7,4) NOT NULL DEFAULT 0,
+      converted_invoice_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS activity_log (
+      id SERIAL PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      entity_type TEXT NOT NULL DEFAULT '',
+      entity_id TEXT,
+      entity_name TEXT,
+      description TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
     CREATE TABLE IF NOT EXISTS app_settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL DEFAULT ''
     );
+  `);
+  // Add recurrence columns to invoices if not exist
+  await pool.query(`
+    ALTER TABLE invoices ADD COLUMN IF NOT EXISTS recurrence_type TEXT NOT NULL DEFAULT 'none';
+    ALTER TABLE invoices ADD COLUMN IF NOT EXISTS recurrence_end DATE;
   `);
   console.log('Database schema ready');
 }
@@ -279,13 +308,20 @@ app.post('/api/invoices', async (req, res) => {
         JSON.stringify(d.items||[]),d.status||'draft',
         d.invoiceDate||new Date(),d.dueDate||new Date(),
         d.notes||'',d.taxRate||0,d.createdAt||new Date()]);
+    await logActivity('invoice_saved', 'invoice', d.id, d.invoiceNumber,
+      `Invoice ${d.invoiceNumber} saved (${d.status}) for ${d.customerName}`);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.delete('/api/invoices/:id', async (req, res) => {
   try {
+    const r = await pool.query('SELECT invoice_number, customer_name FROM invoices WHERE id=$1', [req.params.id]);
     await pool.query('DELETE FROM invoices WHERE id=$1', [req.params.id]);
+    if (r.rows[0]) {
+      await logActivity('invoice_deleted', 'invoice', req.params.id,
+        r.rows[0].invoice_number, `Invoice ${r.rows[0].invoice_number} deleted`);
+    }
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -427,6 +463,130 @@ app.get('/api/invoices/summary', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── Activity Log ─────────────────────────────────────────────────────────────
+
+async function logActivity(eventType, entityType, entityId, entityName, description) {
+  try {
+    await pool.query(
+      'INSERT INTO activity_log(event_type,entity_type,entity_id,entity_name,description) VALUES($1,$2,$3,$4,$5)',
+      [eventType, entityType, entityId || null, entityName || null, description]
+    );
+  } catch (_) {} // Non-blocking
+}
+
+app.get('/api/activity-log', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit || '100');
+    const r = await pool.query(
+      'SELECT * FROM activity_log ORDER BY created_at DESC LIMIT $1', [limit]
+    );
+    res.json(r.rows.map(row => ({
+      id: row.id, eventType: row.event_type, entityType: row.entity_type,
+      entityId: row.entity_id, entityName: row.entity_name,
+      description: row.description, createdAt: row.created_at,
+    })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Quotes ───────────────────────────────────────────────────────────────────
+
+function rowToQuote(r) {
+  return {
+    id: r.id, quoteNumber: r.quote_number,
+    customerId: r.customer_id || '', customerName: r.customer_name,
+    customerEmail: r.customer_email,
+    items: Array.isArray(r.items) ? r.items : [],
+    status: r.status, quoteDate: r.quote_date, validUntil: r.valid_until,
+    notes: r.notes, taxRate: parseFloat(r.tax_rate),
+    convertedInvoiceId: r.converted_invoice_id || null,
+    createdAt: r.created_at,
+  };
+}
+
+app.get('/api/quotes/next-number', async (req, res) => {
+  try {
+    const prefRes = await pool.query("SELECT value FROM app_settings WHERE key='quotePrefix'");
+    const prefix = prefRes.rows[0]?.value || 'QUO';
+    const num = await nextNumber('quote_counter', prefix);
+    res.json({ number: num });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/quotes', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT * FROM quotes ORDER BY created_at DESC');
+    res.json(r.rows.map(rowToQuote));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/quotes', async (req, res) => {
+  try {
+    const { id, quoteNumber, customerId, customerName, customerEmail,
+            items, status, quoteDate, validUntil, notes, taxRate } = req.body;
+    await pool.query(
+      `INSERT INTO quotes(id,quote_number,customer_id,customer_name,customer_email,
+        items,status,quote_date,valid_until,notes,tax_rate)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT(id) DO UPDATE SET
+         quote_number=$2,customer_id=$3,customer_name=$4,customer_email=$5,
+         items=$6,status=$7,quote_date=$8,valid_until=$9,notes=$10,tax_rate=$11`,
+      [id, quoteNumber, customerId || null, customerName, customerEmail || '',
+       JSON.stringify(items || []), status || 'draft',
+       quoteDate || new Date(), validUntil || new Date(Date.now() + 30*86400*1000),
+       notes || '', taxRate || 0]
+    );
+    const isNew = !(await pool.query('SELECT id FROM quotes WHERE id=$1', [id])).rows.length;
+    await logActivity('quote_saved', 'quote', id, quoteNumber,
+      `Quote ${quoteNumber} ${isNew ? 'created' : 'updated'} for ${customerName}`);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/quotes/:id', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT quote_number, customer_name FROM quotes WHERE id=$1', [req.params.id]);
+    await pool.query('DELETE FROM quotes WHERE id=$1', [req.params.id]);
+    if (r.rows[0]) {
+      await logActivity('quote_deleted', 'quote', req.params.id,
+        r.rows[0].quote_number, `Quote ${r.rows[0].quote_number} deleted`);
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/quotes/:id/convert', async (req, res) => {
+  try {
+    const qRes = await pool.query('SELECT * FROM quotes WHERE id=$1', [req.params.id]);
+    if (!qRes.rows[0]) return res.status(404).json({ error: 'Quote not found' });
+    const q = qRes.rows[0];
+
+    const prefRes = await pool.query("SELECT value FROM app_settings WHERE key='invoicePrefix'");
+    const prefix = prefRes.rows[0]?.value || 'INV';
+    const invNumber = await nextNumber('invoice_counter', prefix);
+
+    const invId = Date.now().toString(16) + Math.random().toString(16).slice(2, 8);
+    const dueDate = new Date(Date.now() + 30 * 86400 * 1000);
+
+    await pool.query(
+      `INSERT INTO invoices(id,invoice_number,customer_id,customer_name,customer_email,
+        items,status,invoice_date,due_date,notes,tax_rate)
+       VALUES($1,$2,$3,$4,$5,$6,'draft',$7,$8,$9,$10)`,
+      [invId, invNumber, q.customer_id, q.customer_name, q.customer_email,
+       q.items, new Date(), dueDate, q.notes, q.tax_rate]
+    );
+
+    await pool.query(
+      'UPDATE quotes SET status=$1, converted_invoice_id=$2 WHERE id=$3',
+      ['converted', invId, q.id]
+    );
+
+    await logActivity('quote_converted', 'quote', q.id, q.quote_number,
+      `Quote ${q.quote_number} converted to Invoice ${invNumber}`);
+
+    res.json({ ok: true, invoiceId: invId, invoiceNumber: invNumber });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── Payments ─────────────────────────────────────────────────────────────────
 
 app.get('/api/payments', async (req, res) => {
@@ -455,6 +615,10 @@ app.post('/api/payments', async (req, res) => {
          amount=$3,payment_date=$4,method=$5,reference=$6,notes=$7`,
       [id, invoiceId, amount, paymentDate, method || 'cash', reference || '', notes || '']
     );
+    const invR = await pool.query('SELECT invoice_number FROM invoices WHERE id=$1', [invoiceId]);
+    const invNum = invR.rows[0]?.invoice_number || invoiceId;
+    await logActivity('payment_recorded', 'payment', id, invNum,
+      `Payment of ${amount} (${method || 'cash'}) recorded for Invoice ${invNum}`);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -462,6 +626,7 @@ app.post('/api/payments', async (req, res) => {
 app.delete('/api/payments/:id', async (req, res) => {
   try {
     await pool.query('DELETE FROM payments WHERE id=$1', [req.params.id]);
+    await logActivity('payment_deleted', 'payment', req.params.id, null, `Payment ${req.params.id} deleted`);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
