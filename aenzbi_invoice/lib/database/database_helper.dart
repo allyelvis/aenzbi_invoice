@@ -3,6 +3,7 @@ import '../models/customer.dart';
 import '../models/invoice.dart';
 import '../models/supplier.dart';
 import '../models/purchase_order.dart';
+import '../models/payment.dart';
 import '../models/app_settings.dart';
 import '../api/api_client.dart';
 import '../services/currency_service.dart';
@@ -152,6 +153,26 @@ class DatabaseHelper {
 
   Future<void> deletePurchaseOrder(String id) async {
     await ApiClient.delete('/purchases/$id');
+  }
+
+  // ─── Payments ─────────────────────────────────────────────────────────────
+
+  Future<List<Payment>> getPayments(String invoiceId) async {
+    final list = await ApiClient.get('/payments?invoiceId=$invoiceId') as List<dynamic>;
+    return list.map((e) => Payment.fromMap(e as Map)).toList();
+  }
+
+  Future<void> savePayment(Payment payment) async {
+    await ApiClient.post('/payments', payment.toMap());
+  }
+
+  Future<void> deletePayment(String id) async {
+    await ApiClient.delete('/payments/$id');
+  }
+
+  Future<Map<String, double>> getPaymentTotals() async {
+    final res = await ApiClient.get('/invoices/payments-totals') as Map<dynamic, dynamic>;
+    return res.map((k, v) => MapEntry(k.toString(), (v as num).toDouble()));
   }
 
   // ─── Settings ────────────────────────────────────────────────────────────

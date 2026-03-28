@@ -74,6 +74,16 @@ async function initSchema() {
       tax_rate NUMERIC(7,4) NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS payments (
+      id TEXT PRIMARY KEY,
+      invoice_id TEXT NOT NULL,
+      amount NUMERIC(15,2) NOT NULL DEFAULT 0,
+      payment_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      method TEXT NOT NULL DEFAULT 'cash',
+      reference TEXT NOT NULL DEFAULT '',
+      notes TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
     CREATE TABLE IF NOT EXISTS app_settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL DEFAULT ''
@@ -417,6 +427,56 @@ app.get('/api/invoices/summary', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── Payments ─────────────────────────────────────────────────────────────────
+
+app.get('/api/payments', async (req, res) => {
+  try {
+    const { invoiceId } = req.query;
+    const r = await pool.query(
+      'SELECT * FROM payments WHERE invoice_id=$1 ORDER BY payment_date DESC, created_at DESC',
+      [invoiceId]
+    );
+    res.json(r.rows.map(p => ({
+      id: p.id, invoiceId: p.invoice_id,
+      amount: parseFloat(p.amount),
+      paymentDate: p.payment_date,
+      method: p.method, reference: p.reference, notes: p.notes,
+    })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/payments', async (req, res) => {
+  try {
+    const { id, invoiceId, amount, paymentDate, method, reference, notes } = req.body;
+    await pool.query(
+      `INSERT INTO payments(id,invoice_id,amount,payment_date,method,reference,notes)
+       VALUES($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT(id) DO UPDATE SET
+         amount=$3,payment_date=$4,method=$5,reference=$6,notes=$7`,
+      [id, invoiceId, amount, paymentDate, method || 'cash', reference || '', notes || '']
+    );
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/payments/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM payments WHERE id=$1', [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/invoices/payments-totals', async (req, res) => {
+  try {
+    const r = await pool.query(
+      'SELECT invoice_id, SUM(amount) as total FROM payments GROUP BY invoice_id'
+    );
+    const map = {};
+    for (const row of r.rows) map[row.invoice_id] = parseFloat(row.total);
+    res.json(map);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── Reports ─────────────────────────────────────────────────────────────────
 
 // Helper: compute invoice total inline
@@ -562,6 +622,44 @@ app.get('/api/reports/purchases', async (req, res) => {
         total: parseFloat(r.total || 0),
       })),
     });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/reports/aging', async (req, res) => {
+  try {
+    const invTot = `
+      COALESCE(
+        (SELECT SUM((item->>'quantity')::numeric*(item->>'unitPrice')::numeric)
+         FROM jsonb_array_elements(items) item), 0
+      ) * (1 + tax_rate/100.0)
+    `;
+    const r = await pool.query(`
+      SELECT i.id, i.invoice_number, i.customer_name, i.due_date, i.invoice_date,
+             i.status,
+             ${invTot} as total,
+             COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=i.id), 0) as paid,
+             EXTRACT(DAY FROM NOW() - i.due_date)::integer as days_overdue
+      FROM invoices i
+      WHERE i.status NOT IN ('paid')
+      ORDER BY days_overdue DESC
+    `);
+    res.json(r.rows.map(row => ({
+      id: row.id,
+      invoiceNumber: row.invoice_number,
+      customerName: row.customer_name,
+      dueDate: row.due_date,
+      invoiceDate: row.invoice_date,
+      status: row.status,
+      total: parseFloat(row.total || 0),
+      paid: parseFloat(row.paid || 0),
+      balance: parseFloat(row.total || 0) - parseFloat(row.paid || 0),
+      daysOverdue: parseInt(row.days_overdue || 0),
+      ageGroup: parseInt(row.days_overdue || 0) <= 0 ? 'Current'
+              : parseInt(row.days_overdue) <= 30 ? '1–30 days'
+              : parseInt(row.days_overdue) <= 60 ? '31–60 days'
+              : parseInt(row.days_overdue) <= 90 ? '61–90 days'
+              : '90+ days',
+    })));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

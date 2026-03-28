@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
 import '../models/invoice.dart';
+import '../models/payment.dart';
 import '../models/app_settings.dart';
 import '../services/currency_service.dart';
 import '../services/print_service.dart';
@@ -17,6 +18,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   List<Invoice> _all = [];
   List<Invoice> _filtered = [];
   Map<String, dynamic> _summary = {};
+  Map<String, double> _paymentTotals = {};
   bool _loading = true;
   InvoiceStatus? _statusFilter;
   AppSettings _settings = const AppSettings();
@@ -29,13 +31,17 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final invoices = await DatabaseHelper.instance.getAllInvoices();
-    final summary = await DatabaseHelper.instance.getInvoiceSummary();
-    final settings = await DatabaseHelper.instance.getSettings();
+    final results = await Future.wait([
+      DatabaseHelper.instance.getAllInvoices(),
+      DatabaseHelper.instance.getInvoiceSummary(),
+      DatabaseHelper.instance.getSettings(),
+      DatabaseHelper.instance.getPaymentTotals(),
+    ]);
     setState(() {
-      _all = invoices;
-      _summary = summary;
-      _settings = settings;
+      _all = results[0] as List<Invoice>;
+      _summary = results[1] as Map<String, dynamic>;
+      _settings = results[2] as AppSettings;
+      _paymentTotals = results[3] as Map<String, double>;
       _applyFilter();
       _loading = false;
     });
@@ -45,9 +51,8 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     if (_statusFilter == null) {
       _filtered = List.from(_all);
     } else {
-      _filtered = _all
-          .where((i) => i.effectiveStatus == _statusFilter)
-          .toList();
+      _filtered =
+          _all.where((i) => i.effectiveStatus == _statusFilter).toList();
     }
   }
 
@@ -72,17 +77,17 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Invoice'),
-        content: Text('Delete ${invoice.invoiceNumber}? This cannot be undone.'),
+        content:
+            Text('Delete ${invoice.invoiceNumber}? This cannot be undone.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancel')),
           FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(ctx).colorScheme.error),
-            child: const Text('Delete'),
-          ),
+              style:
+                  FilledButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Delete')),
         ],
       ),
     );
@@ -95,6 +100,19 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   Future<void> _markAs(Invoice invoice, InvoiceStatus status) async {
     await DatabaseHelper.instance.saveInvoice(invoice.copyWith(status: status));
     _load();
+  }
+
+  Future<void> _showPaymentSheet(Invoice invoice) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _PaymentSheet(
+        invoice: invoice,
+        paid: _paymentTotals[invoice.id] ?? 0.0,
+        onChanged: _load,
+      ),
+    );
   }
 
   @override
@@ -136,6 +154,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   }
 
   Widget _buildSummaryBar(ColorScheme cs) {
+    final cur = CurrencyService.instance;
     final paid = (_summary['totalPaid'] ?? 0.0) as double;
     final outstanding = (_summary['totalOutstanding'] ?? 0.0) as double;
     final overdue = (_summary['totalOverdue'] ?? 0.0) as double;
@@ -150,11 +169,15 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _summaryTile(cs, Icons.check_circle_outline, '\$${paid.toStringAsFixed(2)}', 'Paid', Colors.green),
+          _summaryTile(cs, Icons.check_circle_outline,
+              cur.format(paid), 'Paid', Colors.green),
           _vDivider(),
-          _summaryTile(cs, Icons.pending_outlined, '\$${outstanding.toStringAsFixed(2)}', 'Pending', Colors.blue),
+          _summaryTile(cs, Icons.pending_outlined,
+              cur.format(outstanding), 'Pending', Colors.blue),
           _vDivider(),
-          _summaryTile(cs, Icons.warning_outlined, '\$${overdue.toStringAsFixed(2)}', 'Overdue', overdue > 0 ? cs.error : null),
+          _summaryTile(cs, Icons.warning_outlined,
+              cur.format(overdue), 'Overdue',
+              overdue > 0 ? cs.error : null),
         ],
       ),
     );
@@ -181,8 +204,11 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
 
   Widget _buildFilterChips(ColorScheme cs) {
     final filters = <InvoiceStatus?>[
-      null, InvoiceStatus.draft, InvoiceStatus.sent,
-      InvoiceStatus.paid, InvoiceStatus.overdue,
+      null,
+      InvoiceStatus.draft,
+      InvoiceStatus.sent,
+      InvoiceStatus.paid,
+      InvoiceStatus.overdue,
     ];
     final labels = ['All', 'Draft', 'Sent', 'Paid', 'Overdue'];
 
@@ -212,6 +238,10 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
     final status = invoice.effectiveStatus;
     final statusColor = _statusColor(status, cs);
     final isOverdue = status == InvoiceStatus.overdue;
+    final cur = CurrencyService.instance;
+    final paid = _paymentTotals[invoice.id] ?? 0.0;
+    final balance = invoice.total - paid;
+    final hasPayments = paid > 0;
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
@@ -230,8 +260,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                       children: [
                         Text(invoice.invoiceNumber,
                             style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 15)),
+                                fontWeight: FontWeight.bold, fontSize: 15)),
                         const SizedBox(height: 2),
                         Text(invoice.customerName,
                             style: TextStyle(
@@ -244,7 +273,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        '\$${invoice.total.toStringAsFixed(2)}',
+                        cur.format(invoice.total),
                         style: const TextStyle(
                             fontWeight: FontWeight.bold, fontSize: 16),
                       ),
@@ -255,8 +284,8 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                         decoration: BoxDecoration(
                           color: statusColor.withOpacity(0.12),
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                              color: statusColor.withOpacity(0.3)),
+                          border:
+                              Border.all(color: statusColor.withOpacity(0.3)),
                         ),
                         child: Text(
                           status.label,
@@ -271,7 +300,42 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              if (hasPayments) ...[
+                const SizedBox(height: 6),
+                Row(children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'Paid: ${cur.format(paid)}',
+                      style: const TextStyle(
+                          fontSize: 11, color: Colors.green,
+                          fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  if (balance > 0.01)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        'Balance: ${cur.format(balance)}',
+                        style: const TextStyle(
+                            fontSize: 11, color: Colors.orange,
+                            fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                ]),
+              ],
+              const SizedBox(height: 6),
               Row(
                 children: [
                   Icon(Icons.calendar_today_outlined,
@@ -284,36 +348,91 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
                       color: isOverdue
                           ? cs.error
                           : cs.onSurface.withOpacity(0.6),
-                      fontWeight:
-                          isOverdue ? FontWeight.w600 : FontWeight.normal,
+                      fontWeight: isOverdue
+                          ? FontWeight.w600
+                          : FontWeight.normal,
                     ),
                   ),
                   const Spacer(),
+                  // Quick pay button
+                  if (status != InvoiceStatus.paid)
+                    Tooltip(
+                      message: 'Record Payment',
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(6),
+                        onTap: () => _showPaymentSheet(invoice),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          child: Row(children: [
+                            Icon(Icons.payment, size: 14,
+                                color: cs.primary),
+                            const SizedBox(width: 3),
+                            Text('Pay',
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: cs.primary,
+                                    fontWeight: FontWeight.w600)),
+                          ]),
+                        ),
+                      ),
+                    ),
                   PopupMenuButton<String>(
                     padding: EdgeInsets.zero,
                     iconSize: 18,
-                    onSelected: (v) {
+                    onSelected: (v) async {
                       if (v == 'edit') _navigateToEdit(invoice);
-                      if (v == 'print') PrintService.printInvoice(invoice, _settings);
-                      if (v == 'mark_sent') _markAs(invoice, InvoiceStatus.sent);
-                      if (v == 'mark_paid') _markAs(invoice, InvoiceStatus.paid);
-                      if (v == 'mark_draft') _markAs(invoice, InvoiceStatus.draft);
+                      if (v == 'print')
+                        PrintService.printInvoice(invoice, _settings);
+                      if (v == 'payment') _showPaymentSheet(invoice);
+                      if (v == 'mark_sent')
+                        _markAs(invoice, InvoiceStatus.sent);
+                      if (v == 'mark_paid')
+                        _markAs(invoice, InvoiceStatus.paid);
+                      if (v == 'mark_draft')
+                        _markAs(invoice, InvoiceStatus.draft);
                       if (v == 'delete') _delete(invoice);
                     },
                     itemBuilder: (_) => [
-                      const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                      const PopupMenuItem(value: 'print', child: ListTile(
-                        dense: true, contentPadding: EdgeInsets.zero,
-                        leading: Icon(Icons.print_outlined, size: 18),
-                        title: Text('Print / Export PDF'),
-                      )),
+                      const PopupMenuItem(
+                          value: 'edit',
+                          child: ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(Icons.edit_outlined, size: 18),
+                            title: Text('Edit'),
+                          )),
+                      const PopupMenuItem(
+                          value: 'payment',
+                          child: ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(Icons.payment, size: 18,
+                                color: Colors.green),
+                            title: Text('Record Payment'),
+                          )),
+                      const PopupMenuItem(
+                          value: 'print',
+                          child: ListTile(
+                            dense: true,
+                            contentPadding: EdgeInsets.zero,
+                            leading:
+                                Icon(Icons.print_outlined, size: 18),
+                            title: Text('Print / Export PDF'),
+                          )),
                       const PopupMenuDivider(),
                       if (status != InvoiceStatus.sent)
-                        const PopupMenuItem(value: 'mark_sent', child: Text('Mark as Sent')),
+                        const PopupMenuItem(
+                            value: 'mark_sent',
+                            child: Text('Mark as Sent')),
                       if (status != InvoiceStatus.paid)
-                        const PopupMenuItem(value: 'mark_paid', child: Text('Mark as Paid')),
+                        const PopupMenuItem(
+                            value: 'mark_paid',
+                            child: Text('Mark as Paid')),
                       if (status != InvoiceStatus.draft)
-                        const PopupMenuItem(value: 'mark_draft', child: Text('Revert to Draft')),
+                        const PopupMenuItem(
+                            value: 'mark_draft',
+                            child: Text('Revert to Draft')),
                       const PopupMenuDivider(),
                       const PopupMenuItem(
                           value: 'delete',
@@ -344,7 +463,7 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
   }
 
   String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
 
   Widget _emptyState(ColorScheme cs) {
@@ -374,4 +493,319 @@ class _InvoiceScreenState extends State<InvoiceScreen> {
       ),
     );
   }
+}
+
+// ─── Payment Bottom Sheet ─────────────────────────────────────────────────────
+
+class _PaymentSheet extends StatefulWidget {
+  final Invoice invoice;
+  final double paid;
+  final VoidCallback onChanged;
+  const _PaymentSheet({
+    required this.invoice,
+    required this.paid,
+    required this.onChanged,
+  });
+
+  @override
+  State<_PaymentSheet> createState() => _PaymentSheetState();
+}
+
+class _PaymentSheetState extends State<_PaymentSheet> {
+  List<Payment> _payments = [];
+  bool _loading = true;
+  bool _showForm = false;
+
+  final _amountCtrl = TextEditingController();
+  final _refCtrl = TextEditingController();
+  final _notesCtrl = TextEditingController();
+  String _method = 'Cash';
+  DateTime _date = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _amountCtrl.dispose();
+    _refCtrl.dispose();
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    final payments =
+        await DatabaseHelper.instance.getPayments(widget.invoice.id);
+    setState(() { _payments = payments; _loading = false; });
+  }
+
+  double get _totalPaid =>
+      _payments.fold(0.0, (s, p) => s + p.amount);
+  double get _balance => widget.invoice.total - _totalPaid;
+
+  Future<void> _addPayment() async {
+    final amount = double.tryParse(_amountCtrl.text);
+    if (amount == null || amount <= 0) return;
+    final id = DateTime.now().millisecondsSinceEpoch.toRadixString(16);
+    final payment = Payment(
+      id: id,
+      invoiceId: widget.invoice.id,
+      amount: amount,
+      paymentDate: _date,
+      method: _method,
+      reference: _refCtrl.text.trim(),
+      notes: _notesCtrl.text.trim(),
+    );
+    await DatabaseHelper.instance.savePayment(payment);
+    _amountCtrl.clear();
+    _refCtrl.clear();
+    _notesCtrl.clear();
+    setState(() => _showForm = false);
+    await _load();
+    widget.onChanged();
+  }
+
+  Future<void> _deletePayment(Payment p) async {
+    await DatabaseHelper.instance.deletePayment(p.id);
+    await _load();
+    widget.onChanged();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final cur = CurrencyService.instance;
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+        left: 20, right: 20, top: 12,
+      ),
+      constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.85),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Handle
+          Center(child: Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2)))),
+          const SizedBox(height: 12),
+          // Header
+          Row(children: [
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(widget.invoice.invoiceNumber,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(widget.invoice.customerName,
+                    style: TextStyle(
+                        color: cs.onSurface.withOpacity(0.6), fontSize: 13)),
+              ],
+            )),
+            Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              Text('Total: ${cur.format(widget.invoice.total)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+            ]),
+          ]),
+          const SizedBox(height: 12),
+          // Balance bar
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: _balance <= 0
+                  ? Colors.green.shade50
+                  : cs.primaryContainer.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _balStat('Paid', cur.format(_totalPaid), Colors.green),
+                Container(width: 1, height: 30, color: Colors.black12),
+                _balStat('Balance', cur.format(_balance > 0 ? _balance : 0),
+                    _balance <= 0 ? Colors.green : cs.primary),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Payment list
+          Flexible(
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _payments.isEmpty && !_showForm
+                    ? Center(child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Text('No payments recorded yet.',
+                            style: TextStyle(color: cs.onSurface.withOpacity(0.5))),
+                      ))
+                    : ListView(
+                        shrinkWrap: true,
+                        children: [
+                          ..._payments.map((p) => _paymentTile(p, cs, cur)),
+                          if (_showForm) _addForm(cs),
+                        ],
+                      ),
+          ),
+          const SizedBox(height: 8),
+          // Bottom buttons
+          if (!_showForm)
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => setState(() {
+                  _showForm = true;
+                  _amountCtrl.text =
+                      _balance > 0 ? _balance.toStringAsFixed(2) : '';
+                }),
+                icon: const Icon(Icons.add),
+                label: const Text('Add Payment'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _balStat(String label, String value, Color color) {
+    return Column(children: [
+      Text(value,
+          style: TextStyle(fontWeight: FontWeight.bold,
+              fontSize: 15, color: color)),
+      Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+    ]);
+  }
+
+  Widget _paymentTile(Payment p, ColorScheme cs, CurrencyService cur) {
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      leading: CircleAvatar(
+        radius: 18,
+        backgroundColor: Colors.green.shade50,
+        child: const Icon(Icons.check, size: 16, color: Colors.green),
+      ),
+      title: Text(cur.format(p.amount),
+          style: const TextStyle(fontWeight: FontWeight.bold)),
+      subtitle: Text(
+        '${p.method} · ${_fmt(p.paymentDate)}'
+        '${p.reference.isNotEmpty ? ' · ${p.reference}' : ''}',
+        style: const TextStyle(fontSize: 11),
+      ),
+      trailing: IconButton(
+        icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+        onPressed: () => _deletePayment(p),
+      ),
+    );
+  }
+
+  Widget _addForm(ColorScheme cs) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(),
+        Text('New Payment', style: TextStyle(fontWeight: FontWeight.bold,
+            color: cs.primary)),
+        const SizedBox(height: 10),
+        Row(children: [
+          Expanded(
+            flex: 2,
+            child: TextFormField(
+              controller: _amountCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Amount *',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 2,
+            child: DropdownButtonFormField<String>(
+              value: _method,
+              decoration: const InputDecoration(
+                labelText: 'Method',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              items: Payment.methods
+                  .map((m) => DropdownMenuItem(value: m, child: Text(m, style: const TextStyle(fontSize: 13))))
+                  .toList(),
+              onChanged: (v) => setState(() => _method = v!),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        Row(children: [
+          Expanded(
+            child: InkWell(
+              onTap: () async {
+                final d = await showDatePicker(
+                  context: context,
+                  initialDate: _date,
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime.now().add(const Duration(days: 1)),
+                );
+                if (d != null) setState(() => _date = d);
+              },
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Date',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                child: Text(
+                  '${_date.day.toString().padLeft(2,'0')}/${_date.month.toString().padLeft(2,'0')}/${_date.year}',
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextFormField(
+              controller: _refCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Reference',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 10),
+        Row(children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: () => setState(() => _showForm = false),
+              child: const Text('Cancel'),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: FilledButton(
+              onPressed: _addPayment,
+              child: const Text('Save Payment'),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  String _fmt(DateTime d) =>
+      '${d.day.toString().padLeft(2,'0')}/${d.month.toString().padLeft(2,'0')}/${d.year}';
 }

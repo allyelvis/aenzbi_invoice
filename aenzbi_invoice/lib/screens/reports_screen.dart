@@ -15,7 +15,7 @@ class _ReportsScreenState extends State<ReportsScreen>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 4, vsync: this);
+    _tab = TabController(length: 5, vsync: this);
   }
 
   @override
@@ -37,6 +37,7 @@ class _ReportsScreenState extends State<ReportsScreen>
             Tab(icon: Icon(Icons.bar_chart), text: 'Sales'),
             Tab(icon: Icon(Icons.inventory_2_outlined), text: 'Inventory'),
             Tab(icon: Icon(Icons.shopping_cart_outlined), text: 'Purchases'),
+            Tab(icon: Icon(Icons.account_balance_outlined), text: 'Aging'),
             Tab(icon: Icon(Icons.summarize_outlined), text: 'Summary'),
           ],
         ),
@@ -47,6 +48,7 @@ class _ReportsScreenState extends State<ReportsScreen>
           _SalesReport(),
           _InventoryReport(),
           _PurchasesReport(),
+          _AgingReport(),
           _SummaryReport(),
         ],
       ),
@@ -876,6 +878,197 @@ class _MetricCard extends StatelessWidget {
       ),
     );
   }
+}
+
+// ─── Aging Report ─────────────────────────────────────────────────────────────
+
+class _AgingReport extends StatefulWidget {
+  const _AgingReport();
+  @override State<_AgingReport> createState() => _AgingReportState();
+}
+
+class _AgingReportState extends State<_AgingReport>
+    with AutomaticKeepAliveClientMixin {
+  @override bool get wantKeepAlive => true;
+  List<Map<dynamic, dynamic>> _rows = [];
+  bool _loading = true;
+  String? _error;
+  String? _groupFilter;
+
+  static const _groups = [
+    'Current', '1–30 days', '31–60 days', '61–90 days', '90+ days'
+  ];
+  static const _groupColors = [
+    Colors.green, Colors.blue, Colors.orange,
+    Colors.deepOrange, Colors.red
+  ];
+
+  @override
+  void initState() { super.initState(); _load(); }
+
+  Future<void> _load() async {
+    setState(() { _loading = true; _error = null; });
+    try {
+      final d = await ApiClient.get('/reports/aging') as List<dynamic>;
+      setState(() { _rows = d.cast<Map<dynamic, dynamic>>(); _loading = false; });
+    } catch (e) {
+      setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_error != null) return _errorView(_error!, _load);
+
+    final cs = Theme.of(context).colorScheme;
+    final cur = CurrencyService.instance;
+
+    final filtered = _groupFilter == null
+        ? _rows
+        : _rows.where((r) => r['ageGroup'] == _groupFilter).toList();
+
+    // Totals by group
+    final totals = <String, double>{};
+    final balances = <String, double>{};
+    for (final r in _rows) {
+      final g = r['ageGroup'] as String;
+      totals[g] = (totals[g] ?? 0) + (r['total'] as num).toDouble();
+      balances[g] = (balances[g] ?? 0) + (r['balance'] as num).toDouble();
+    }
+
+    final totalBalance = _rows.fold<double>(0, (s, r) => s + (r['balance'] as num).toDouble());
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // Total outstanding
+          Card(
+            color: totalBalance > 0 ? Colors.orange.shade50 : Colors.green.shade50,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Icon(
+                    totalBalance > 0
+                        ? Icons.account_balance_outlined
+                        : Icons.check_circle_outline,
+                    color: totalBalance > 0 ? Colors.orange : Colors.green,
+                    size: 28,
+                  ),
+                  const SizedBox(width: 12),
+                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Total Outstanding',
+                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                    Text(cur.format(totalBalance),
+                        style: TextStyle(
+                            fontSize: 22, fontWeight: FontWeight.bold,
+                            color: totalBalance > 0 ? Colors.orange.shade700 : Colors.green)),
+                  ]),
+                  const Spacer(),
+                  Text('${_rows.length} invoice${_rows.length == 1 ? '' : 's'}',
+                      style: TextStyle(color: cs.onSurface.withOpacity(0.5), fontSize: 12)),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Aging buckets
+          Row(children: List.generate(_groups.length, (i) {
+            final g = _groups[i];
+            final c = _groupColors[i];
+            final bal = balances[g] ?? 0;
+            if (bal == 0 && _groupFilter != g) return const SizedBox.shrink();
+            final selected = _groupFilter == g;
+            return Expanded(child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 3),
+              child: GestureDetector(
+                onTap: () => setState(() =>
+                    _groupFilter = selected ? null : g),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: selected ? c.withOpacity(0.15) : c.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: selected
+                        ? c : c.withOpacity(0.2), width: selected ? 1.5 : 1),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(g,
+                          style: TextStyle(fontSize: 9,
+                              fontWeight: FontWeight.bold, color: c),
+                          textAlign: TextAlign.center),
+                      const SizedBox(height: 4),
+                      Text(cur.compact(bal),
+                          style: TextStyle(fontSize: 11,
+                              fontWeight: FontWeight.bold, color: c)),
+                    ],
+                  ),
+                ),
+              ),
+            ));
+          })),
+          const SizedBox(height: 12),
+          // Invoice list
+          _card(context, filtered.isEmpty ? 'No Outstanding Invoices' : 'Outstanding Invoices',
+            filtered.isEmpty
+                ? _empty('All invoices are paid')
+                : Table(
+                    columnWidths: const {
+                      0: FlexColumnWidth(2), 1: FlexColumnWidth(2),
+                      2: FlexColumnWidth(1.5), 3: FlexColumnWidth(1.5),
+                      4: FlexColumnWidth(1),
+                    },
+                    children: [
+                      _agingHeader(['Invoice', 'Customer', 'Total', 'Balance', 'Age']),
+                      ...filtered.map((r) {
+                        final daysOverdue = r['daysOverdue'] as int? ?? 0;
+                        final ageGroup = r['ageGroup'] as String? ?? '';
+                        final gIndex = _groups.indexOf(ageGroup);
+                        final c = gIndex >= 0 ? _groupColors[gIndex] : cs.onSurface;
+                        return TableRow(
+                          decoration: BoxDecoration(
+                              border: Border(bottom: BorderSide(
+                                  color: cs.outlineVariant.withOpacity(0.3)))),
+                          children: [
+                            _agingCell(r['invoiceNumber'] as String? ?? '', bold: true),
+                            _agingCell(r['customerName'] as String? ?? ''),
+                            _agingCell(cur.compact((r['total'] as num?)?.toDouble() ?? 0)),
+                            _agingCell(cur.compact((r['balance'] as num?)?.toDouble() ?? 0),
+                                color: daysOverdue > 0 ? c : Colors.green),
+                            _agingCell(daysOverdue > 0 ? '+$daysOverdue d' : 'Current',
+                                color: c),
+                          ],
+                        );
+                      }),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  TableRow _agingHeader(List<String> labels) => TableRow(
+    decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.black12, width: 1.5))),
+    children: labels.map((l) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+      child: Text(l, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+    )).toList(),
+  );
+
+  Widget _agingCell(String text, {bool bold = false, Color? color}) =>
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        child: Text(text, style: TextStyle(fontSize: 11,
+            fontWeight: bold ? FontWeight.w600 : FontWeight.normal, color: color),
+            overflow: TextOverflow.ellipsis),
+      );
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
