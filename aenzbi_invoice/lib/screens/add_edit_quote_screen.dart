@@ -107,8 +107,8 @@ class _AddEditQuoteScreenState extends State<AddEditQuoteScreen> {
     }
   }
 
-  void _addItem() => setState(() => _items.add(InvoiceLineItem(
-        id: _generateId(), description: '', quantity: 1, unitPrice: 0)));
+  void _addItem() => setState(() => _items.add(const InvoiceLineItem(
+      description: '', quantity: 1, unitPrice: 0)));
 
   void _removeItem(int index) => setState(() => _items.removeAt(index));
 
@@ -370,7 +370,6 @@ class _LineItemRowState extends State<_LineItemRow> {
 
   void _notify() {
     widget.onChanged(InvoiceLineItem(
-      id: widget.item.id,
       description: _descCtrl.text,
       quantity: double.tryParse(_qtyCtrl.text) ?? 1,
       unitPrice: double.tryParse(_priceCtrl.text) ?? 0,

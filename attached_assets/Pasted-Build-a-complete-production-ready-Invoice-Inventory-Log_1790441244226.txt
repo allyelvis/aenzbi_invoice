@@ -1,0 +1,1019 @@
+Build a complete production-ready Invoice + Inventory + Logistics Management System as a modern full-stack web application.
+
+1. Product
+
+Create a multi-tenant business management platform for companies that need to manage:
+
+- Customers
+- Suppliers
+- Products
+- Inventory
+- Warehouses
+- Sales
+- Invoices
+- Payments
+- Purchases
+- Orders
+- Deliveries
+- Logistics
+- Vehicles
+- Drivers
+- Expenses
+- Stock transfers
+- Reports
+- Users and permissions
+
+The application must be responsive and work well on desktop, tablet, and mobile.
+
+Use a professional ERP-style UI with a clean dashboard, sidebar navigation, searchable tables, filters, forms, charts, status badges, notifications, and responsive layouts.
+
+2. Recommended stack
+
+Use:
+
+- Frontend: React + TypeScript
+- Framework: Vite or Next.js
+- UI: Tailwind CSS + shadcn/ui
+- Backend: Node.js + TypeScript
+- API: REST API
+- Database: PostgreSQL
+- ORM: Drizzle ORM or Prisma
+- Authentication: secure email/password authentication with sessions/JWT
+- Validation: Zod
+- Charts: Recharts
+- PDF generation: server-side PDF invoices
+- File storage: object storage abstraction
+- Email: SMTP/provider abstraction
+- Deployment: Replit
+
+Keep the architecture modular so it can later support a mobile application and external APIs.
+
+3. Multi-company / multi-tenant architecture
+
+Support multiple organizations.
+
+Every business record must belong to an organization.
+
+Core entities:
+
+- organizations
+- users
+- roles
+- permissions
+- warehouses
+- warehouse_locations
+- customers
+- suppliers
+- products
+- product_categories
+- units
+- tax_rates
+- inventory
+- inventory_movements
+- stock_transfers
+- sales_orders
+- invoices
+- invoice_items
+- payments
+- purchase_orders
+- purchase_items
+- deliveries
+- delivery_items
+- vehicles
+- drivers
+- routes
+- expenses
+- notifications
+- audit_logs
+
+Use foreign keys and database constraints correctly.
+
+Never allow one organization to access another organization's data.
+
+4. Authentication
+
+Implement:
+
+- Login
+- Logout
+- Registration
+- Forgot password
+- Password reset
+- Session management
+- User profile
+- Organization selection
+- Role-based access control
+
+Roles:
+
+- Super Admin
+- Organization Admin
+- Manager
+- Accountant
+- Sales
+- Inventory Manager
+- Warehouse Staff
+- Logistics Manager
+- Driver
+- Viewer
+
+Implement permission checks on both frontend and backend.
+
+5. Dashboard
+
+Create an executive dashboard showing:
+
+- Total sales
+- Outstanding invoices
+- Paid invoices
+- Overdue invoices
+- Purchase value
+- Inventory value
+- Low-stock products
+- Orders awaiting fulfillment
+- Deliveries in progress
+- Completed deliveries
+- Logistics expenses
+- Revenue trends
+- Sales by product
+- Sales by customer
+- Inventory movements
+
+Include date filters:
+
+- Today
+- This week
+- This month
+- This quarter
+- This year
+- Custom range
+
+Charts should update according to the selected period.
+
+6. Product management
+
+Create a complete product module.
+
+Product fields:
+
+- SKU
+- Barcode
+- Name
+- Description
+- Category
+- Brand
+- Unit
+- Purchase price
+- Selling price
+- Tax
+- Minimum stock
+- Maximum stock
+- Current stock
+- Weight
+- Dimensions
+- Image
+- Active/inactive status
+
+Support:
+
+- Product search
+- Barcode search
+- Barcode scanning through device camera where supported
+- Product import CSV
+- Product export CSV
+- Bulk product updates
+- Product history
+
+7. Inventory
+
+Implement real inventory tracking.
+
+Support:
+
+- Stock in
+- Stock out
+- Stock adjustment
+- Stock transfer
+- Warehouse transfer
+- Returns
+- Damaged stock
+- Reserved stock
+- Available stock
+- Low-stock alerts
+
+Inventory should maintain an immutable movement history.
+
+Every stock movement must record:
+
+- Product
+- Warehouse
+- Quantity
+- Movement type
+- Reference document
+- User
+- Date/time
+- Previous quantity
+- New quantity
+- Reason
+
+Prevent negative inventory unless explicitly enabled by organization settings.
+
+8. Warehouses
+
+Support multiple warehouses.
+
+Each warehouse should contain:
+
+- Name
+- Code
+- Address
+- Contact
+- Manager
+- Capacity
+- Active status
+
+Support warehouse locations such as:
+
+Warehouse
+  ├── Zone A
+  │   ├── Shelf A1
+  │   └── Shelf A2
+  ├── Zone B
+  │   ├── Shelf B1
+  │   └── Shelf B2
+
+Provide warehouse-level inventory reports.
+
+9. Customers
+
+Customer fields:
+
+- Customer number
+- Company name
+- Contact person
+- Phone
+- Email
+- Address
+- Tax ID
+- Payment terms
+- Credit limit
+- Currency
+- Notes
+
+Show:
+
+- Customer balance
+- Invoice history
+- Payment history
+- Orders
+- Deliveries
+- Statements
+
+10. Suppliers
+
+Implement supplier management with:
+
+- Supplier profile
+- Contact information
+- Tax information
+- Purchase history
+- Outstanding supplier balances
+- Purchase orders
+- Supplier payments
+
+11. Sales orders
+
+Workflow:
+
+Draft
+→ Confirmed
+→ Picking
+→ Packed
+→ Ready for Delivery
+→ Delivered
+→ Completed
+
+Allow conversion of a sales order into:
+
+- Invoice
+- Delivery
+- Partial delivery
+- Partial invoice
+
+Track order status and history.
+
+12. Invoice system
+
+Create a professional invoice module.
+
+Invoice fields:
+
+- Invoice number
+- Customer
+- Invoice date
+- Due date
+- Currency
+- Payment terms
+- Items
+- Quantity
+- Unit price
+- Discount
+- Tax
+- Subtotal
+- Total tax
+- Grand total
+- Amount paid
+- Balance due
+- Notes
+- Terms and conditions
+
+Automatically calculate totals.
+
+Invoice statuses:
+
+- Draft
+- Sent
+- Partially Paid
+- Paid
+- Overdue
+- Cancelled
+
+Generate professional PDF invoices.
+
+Allow:
+
+- Preview
+- Print
+- Download PDF
+- Email invoice
+- Duplicate invoice
+- Cancel invoice
+- Record payment
+
+Invoice numbering must be configurable per organization.
+
+Example:
+
+INV-2026-000001
+INV-2026-000002
+
+13. Payments
+
+Support:
+
+- Cash
+- Bank transfer
+- Card
+- Mobile money
+- Other
+
+Payment fields:
+
+- Payment number
+- Invoice
+- Customer
+- Amount
+- Currency
+- Payment method
+- Transaction reference
+- Date
+- Notes
+
+Support partial payments.
+
+Automatically update invoice balances.
+
+14. Purchase orders
+
+Implement:
+
+Draft
+→ Sent
+→ Confirmed
+→ Partially Received
+→ Received
+→ Cancelled
+
+Receiving products should automatically increase inventory.
+
+15. Logistics
+
+Create a complete logistics module.
+
+Entities:
+
+- Deliveries
+- Drivers
+- Vehicles
+- Routes
+- Stops
+- Delivery items
+- Delivery status
+- Delivery expenses
+
+Delivery workflow:
+
+Pending
+→ Assigned
+→ Picked Up
+→ In Transit
+→ Arrived
+→ Delivered
+→ Failed
+→ Returned
+
+Each delivery should have:
+
+- Delivery number
+- Sales order
+- Customer
+- Pickup warehouse
+- Destination
+- Driver
+- Vehicle
+- Route
+- Items
+- Quantity
+- Delivery date
+- Estimated arrival
+- Actual arrival
+- Delivery notes
+- Proof of delivery
+
+16. Driver application / delivery interface
+
+Create a mobile-friendly driver interface.
+
+Drivers should see:
+
+- Assigned deliveries
+- Route
+- Customer information
+- Delivery details
+- Navigation link
+- Delivery status
+- Customer signature
+- Proof-of-delivery photo
+- Delivery notes
+
+Allow the driver to mark:
+
+Picked up
+In transit
+Arrived
+Delivered
+Failed
+
+Capture:
+
+- Timestamp
+- GPS coordinates if browser permission is granted
+- Signature
+- Photo
+- Notes
+
+Do not make GPS mandatory.
+
+17. Vehicle management
+
+Vehicle fields:
+
+- Registration number
+- Vehicle type
+- Make
+- Model
+- Year
+- Driver
+- Capacity
+- Fuel type
+- Current mileage
+- Insurance expiry
+- Inspection expiry
+- Maintenance status
+
+Track:
+
+- Fuel expenses
+- Maintenance
+- Repairs
+- Mileage
+- Trips
+- Operating costs
+
+Generate vehicle cost reports.
+
+18. Route management
+
+Allow logistics managers to create routes with:
+
+- Origin
+- Destination
+- Multiple stops
+- Driver
+- Vehicle
+- Delivery assignments
+- Estimated distance
+- Estimated duration
+- Route status
+
+Create a map-ready architecture, but keep the application functional even if no external map API key is configured.
+
+19. Expenses
+
+Track:
+
+- Fuel
+- Maintenance
+- Transport
+- Shipping
+- Warehouse
+- Operations
+- Other
+
+Each expense should support:
+
+- Amount
+- Currency
+- Category
+- Date
+- Vendor
+- Vehicle
+- Delivery
+- Receipt attachment
+- Notes
+
+20. Reports
+
+Create professional reports for:
+
+Sales
+
+- Sales by day
+- Sales by month
+- Sales by customer
+- Sales by product
+- Sales by salesperson
+- Sales by warehouse
+
+Finance
+
+- Accounts receivable
+- Outstanding invoices
+- Overdue invoices
+- Payments
+- Revenue
+- Expenses
+- Profit estimate
+
+Inventory
+
+- Stock valuation
+- Stock movement
+- Low stock
+- Stock adjustments
+- Warehouse inventory
+- Product movement
+
+Logistics
+
+- Deliveries
+- Delivery success rate
+- Failed deliveries
+- Driver performance
+- Vehicle costs
+- Route costs
+- Fuel costs
+
+All reports should support:
+
+- Date filtering
+- CSV export
+- PDF export
+- Print
+
+21. Notifications
+
+Implement notifications for:
+
+- Low stock
+- Overdue invoices
+- New orders
+- Payment received
+- Delivery assigned
+- Delivery completed
+- Vehicle maintenance due
+- Insurance expiry
+- Failed delivery
+
+Create an in-app notification center.
+
+22. Audit logs
+
+Track important actions:
+
+User
+Action
+Entity
+Entity ID
+Old value
+New value
+Timestamp
+IP/user-agent where appropriate
+
+Examples:
+
+- Invoice created
+- Invoice modified
+- Payment recorded
+- Product updated
+- Stock adjusted
+- User permission changed
+- Delivery status changed
+
+Audit logs must be read-only for normal users.
+
+23. Search
+
+Implement global search across:
+
+- Customers
+- Suppliers
+- Products
+- Invoices
+- Orders
+- Deliveries
+- Payments
+- Vehicles
+
+Support keyboard-friendly search.
+
+24. API
+
+Create a documented REST API.
+
+Example:
+
+/api/auth
+/api/organizations
+/api/users
+/api/products
+/api/customers
+/api/suppliers
+/api/warehouses
+/api/inventory
+/api/stock-movements
+/api/orders
+/api/invoices
+/api/payments
+/api/purchases
+/api/deliveries
+/api/drivers
+/api/vehicles
+/api/routes
+/api/expenses
+/api/reports
+
+Add authentication and organization-level authorization to every endpoint.
+
+Create an OpenAPI/Swagger specification.
+
+25. Integrations
+
+Build provider abstractions for:
+
+- Email
+- SMS
+- Payment providers
+- Mobile money
+- Maps
+- Cloud storage
+- Accounting systems
+
+Do not hard-code a single provider.
+
+Use environment variables for credentials.
+
+Example:
+
+DATABASE_URL=
+JWT_SECRET=
+SESSION_SECRET=
+SMTP_HOST=
+SMTP_USER=
+SMTP_PASSWORD=
+MAPS_API_KEY=
+STORAGE_BUCKET=
+
+The application must still run when optional integrations are not configured.
+
+26. Currency and localization
+
+Support multiple currencies.
+
+Include configurable:
+
+- Currency
+- Tax rates
+- Number formats
+- Date formats
+- Time zones
+- Language
+
+Initially support:
+
+- English
+- French
+- Kirundi
+
+Make the translation architecture extensible.
+
+27. Burundi-ready business features
+
+Design the system so it can support businesses operating in Burundi.
+
+Include configurable:
+
+- BIF currency
+- USD
+- EUR
+- VAT/tax configuration
+- Customer tax identification
+- Supplier tax identification
+- Mobile-money payment references
+- Bank-transfer references
+- Local address fields
+- Phone numbers with country codes
+
+Do not hard-code tax rates; make them configurable by organization.
+
+28. UI navigation
+
+Create this sidebar:
+
+Dashboard
+
+Sales
+  ├── Customers
+  ├── Quotes
+  ├── Sales Orders
+  ├── Invoices
+  └── Payments
+
+Purchasing
+  ├── Suppliers
+  ├── Purchase Orders
+  └── Purchases
+
+Inventory
+  ├── Products
+  ├── Warehouses
+  ├── Stock
+  ├── Stock Movements
+  └── Transfers
+
+Logistics
+  ├── Deliveries
+  ├── Routes
+  ├── Drivers
+  ├── Vehicles
+  └── Expenses
+
+Reports
+  ├── Sales
+  ├── Finance
+  ├── Inventory
+  └── Logistics
+
+Administration
+  ├── Users
+  ├── Roles
+  ├── Organization
+  ├── Settings
+  └── Audit Logs
+
+29. Dashboard UX
+
+Use:
+
+- KPI cards
+- Charts
+- Tables
+- Status badges
+- Recent activity
+- Quick actions
+
+Quick actions:
+
+Create Invoice
+Create Order
+Add Product
+Receive Stock
+Record Payment
+Create Delivery
+
+30. Database requirements
+
+Create proper migrations and seed data.
+
+Add indexes for:
+
+- organization_id
+- customer_id
+- supplier_id
+- product_id
+- invoice_number
+- order_number
+- delivery_number
+- SKU
+- barcode
+- status
+- created_at
+
+Use transactions for:
+
+- Invoice creation
+- Payment recording
+- Stock movement
+- Order fulfillment
+- Purchase receiving
+- Delivery completion
+
+Prevent race conditions when updating inventory.
+
+31. Security
+
+Implement:
+
+- Password hashing
+- Secure sessions
+- CSRF protection where applicable
+- Input validation
+- SQL injection protection
+- XSS protection
+- Rate limiting
+- Authorization middleware
+- Secure HTTP headers
+- File upload validation
+- Maximum upload sizes
+- Organization isolation
+
+Never expose passwords, secrets, or private keys to the frontend.
+
+32. Seed/demo data
+
+Create realistic demo data:
+
+- 1 organization
+- 5 users with different roles
+- 20 products
+- 10 customers
+- 5 suppliers
+- 2 warehouses
+- Inventory movements
+- 10 invoices
+- Payments
+- Purchase orders
+- Sales orders
+- Deliveries
+- 3 vehicles
+- 3 drivers
+- Expenses
+
+Provide a demo login.
+
+33. Developer experience
+
+Create:
+
+README.md
+.env.example
+database migrations
+database seed
+API documentation
+
+Add scripts:
+
+npm run dev
+npm run build
+npm run start
+npm run test
+npm run db:migrate
+npm run db:seed
+npm run lint
+
+Add automated tests for:
+
+- Authentication
+- Authorization
+- Invoice calculations
+- Payment calculations
+- Inventory movements
+- Stock transfers
+- Order fulfillment
+- Delivery status
+- Organization isolation
+
+34. Error handling
+
+Create consistent API errors:
+
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Invalid invoice data"
+  }
+}
+
+Add user-friendly frontend error messages.
+
+Do not expose stack traces in production.
+
+35. Important implementation requirement
+
+Do NOT create only a mockup or static frontend.
+
+Build the actual working application with:
+
+- Real database
+- Real authentication
+- Real CRUD operations
+- Real inventory calculations
+- Real invoice calculations
+- Real payment tracking
+- Real order workflow
+- Real logistics workflow
+- Real API
+- Real PDF invoice generation
+- Real authorization
+
+Every major button should perform a real operation.
+
+36. Development workflow
+
+Start by creating the project architecture and database schema.
+
+Then implement in this order:
+
+1. Database
+2. Authentication
+3. Organization/roles
+4. Products
+5. Warehouses/inventory
+6. Customers/suppliers
+7. Sales orders
+8. Invoices
+9. Payments
+10. Purchases
+11. Logistics
+12. Drivers/vehicles
+13. Reports
+14. Notifications
+15. Audit logs
+16. API documentation
+17. Tests
+18. Production hardening
+
+After each major module, run tests and fix errors before moving forward.
+
+37. Final acceptance criteria
+
+The finished Replit application must allow a user to perform this complete workflow:
+
+Create customer
+      ↓
+Create product
+      ↓
+Receive product into warehouse
+      ↓
+Create sales order
+      ↓
+Reserve/pick inventory
+      ↓
+Generate invoice
+      ↓
+Record partial payment
+      ↓
+Create delivery
+      ↓
+Assign driver + vehicle
+      ↓
+Driver marks delivery in transit
+      ↓
+Driver completes delivery
+      ↓
+Capture proof of delivery
+      ↓
+Complete order
+      ↓
+Record remaining payment
+      ↓
+Update inventory
+      ↓
+Generate sales + inventory + logistics reports
+
+Make this workflow fully functional end-to-end.
+
+Build the application with clean reusable components, strong TypeScript typing, maintainable architecture, responsive UX, and production-quality error handling.
+
+Do not stop after generating the initial scaffold. Continue implementing the features until the application is functional end-to-end and verify the main workflows with tests.

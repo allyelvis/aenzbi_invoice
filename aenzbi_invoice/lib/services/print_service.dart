@@ -3,6 +3,7 @@ import 'dart:js' as js;
 import 'dart:convert';
 import '../models/invoice.dart';
 import '../models/purchase_order.dart';
+import '../models/quote.dart';
 import '../models/app_settings.dart';
 import 'currency_service.dart';
 
@@ -15,6 +16,23 @@ class PrintService {
   static void printPurchaseOrder(PurchaseOrder po, AppSettings settings) {
     final content = _poHtml(po, settings);
     _openPrint(content);
+  }
+
+  static void printQuote(Quote quote, AppSettings settings) {
+    final invoice = Invoice(
+      id: quote.id,
+      invoiceNumber: quote.quoteNumber,
+      customerId: quote.customerId,
+      customerName: quote.customerName,
+      customerEmail: quote.customerEmail,
+      items: quote.items,
+      status: InvoiceStatus.draft,
+      invoiceDate: quote.quoteDate,
+      dueDate: quote.validUntil,
+      notes: quote.notes,
+      taxRate: quote.taxRate,
+    );
+    _openPrint(_invoiceHtml(invoice, settings).replaceFirst('INVOICE', 'QUOTE'));
   }
 
   static void _openPrint(String htmlContent) {

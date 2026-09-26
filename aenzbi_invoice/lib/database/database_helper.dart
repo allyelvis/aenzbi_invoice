@@ -5,6 +5,7 @@ import '../models/supplier.dart';
 import '../models/purchase_order.dart';
 import '../models/payment.dart';
 import '../models/app_settings.dart';
+import '../models/quote.dart';
 import '../api/api_client.dart';
 import '../services/currency_service.dart';
 
@@ -126,6 +127,32 @@ class DatabaseHelper {
     await ApiClient.delete('/invoices/$id');
   }
 
+  // ─── Quotes ───────────────────────────────────────────────────────────────
+
+  Future<List<Quote>> getAllQuotes() async {
+    final list = await ApiClient.get('/quotes') as List<dynamic>;
+    return list.map((e) => Quote.fromMap(e as Map)).toList();
+  }
+
+  Future<String> getNextQuoteNumber() async {
+    final res =
+        await ApiClient.get('/quotes/next-number') as Map<dynamic, dynamic>;
+    return res['number'] as String;
+  }
+
+  Future<void> saveQuote(Quote quote) async {
+    await ApiClient.post('/quotes', quote.toMap());
+  }
+
+  Future<void> deleteQuote(String id) async {
+    await ApiClient.delete('/quotes/$id');
+  }
+
+  Future<Map<String, dynamic>> convertQuoteToInvoice(String id) async {
+    final result = await ApiClient.post('/quotes/$id/convert', {});
+    return (result as Map).map((key, value) => MapEntry(key.toString(), value));
+  }
+
   Future<Map<String, dynamic>> getInvoiceSummary() async {
     final res = await ApiClient.get('/invoices/summary') as Map<dynamic, dynamic>;
     return {
@@ -204,6 +231,7 @@ class DatabaseHelper {
       'totalOutstanding': (res['totalOutstanding'] as num?)?.toDouble() ?? 0.0,
       'totalOverdue': (res['totalOverdue'] as num?)?.toDouble() ?? 0.0,
       'totalValue': (res['totalValue'] as num?)?.toDouble() ?? 0.0,
+      'totalItems': (res['totalItems'] as num?)?.toInt() ?? 0,
       'customerCount': (res['customerCount'] as num?)?.toInt() ?? 0,
       'supplierCount': (res['supplierCount'] as num?)?.toInt() ?? 0,
       'totalInvoices': (res['totalInvoices'] as num?)?.toInt() ?? 0,
